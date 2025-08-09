@@ -13,6 +13,8 @@ class PodcastInfo(BaseModel):
 
     title: str = Field(..., description="播客标题")
     author: str = Field(..., description="播客作者/主播")
+    podcast_id: str = Field(default="", description="播客ID")
+    podcast_url: str = Field(default="", description="播客URL")
 
     model_config = ConfigDict(extra="allow")  # 允许额外字段
 
@@ -26,6 +28,12 @@ class EpisodeInfo(BaseModel):
     pub_date: str = Field(default="", description="发布日期")
     eid: str = Field(default="", description="节目ID")
     shownotes: str = Field(default="", description="节目介绍")
+    
+    # 新增的元数据字段
+    episode_url: str = Field(default="", description="节目完整URL")
+    audio_url: str = Field(default="", description="音频文件URL") 
+    cover_image: str = Field(default="", description="节目封面图片URL")
+    published_datetime: str = Field(default="", description="精确发布时间(ISO格式)")
 
     @field_validator("duration")
     @classmethod
@@ -43,13 +51,34 @@ class EpisodeInfo(BaseModel):
     @property
     def formatted_pub_date(self) -> str:
         """格式化发布日期"""
-        if not self.pub_date:
+        # 优先使用 published_datetime，否则使用 pub_date
+        date_str = self.published_datetime or self.pub_date
+        if not date_str:
             return "未知"
         try:
-            dt = datetime.fromisoformat(self.pub_date.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
             return dt.strftime("%Y年%m月%d日")
         except:
-            return self.pub_date
+            return date_str
+
+    @property
+    def formatted_datetime(self) -> str:
+        """格式化发布日期时间（包含时分秒）"""
+        date_str = self.published_datetime or self.pub_date
+        if not date_str:
+            return "未知"
+        try:
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+        except:
+            return date_str
+
+    @property
+    def duration_text(self) -> str:
+        """获取时长文本"""
+        if self.duration_minutes:
+            return f"{self.duration_minutes}分钟"
+        return "未知"
 
     model_config = ConfigDict(extra="allow")  # 允许额外字段
 

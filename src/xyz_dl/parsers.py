@@ -55,6 +55,14 @@ class JsonScriptParser(ParserProtocol):
                 json_data = json.loads(json_ld_script.string)
                 episode_info = self._build_episode_info_from_json_ld(json_data, url)
                 
+                # 尝试从meta标签中提取封面图片
+                try:
+                    cover_image = self._extract_cover_image(soup)
+                    if cover_image:
+                        episode_info = episode_info.model_copy(update={"cover_image": cover_image})
+                except Exception as e:
+                    print(f"Failed to extract cover image: {e}")
+                
                 # 尝试从HTML中获取完整的Show Notes
                 try:
                     html_show_notes = self.extract_show_notes_from_html(html_content)
@@ -309,13 +317,39 @@ class JsonScriptParser(ParserProtocol):
         
         return ''.join(content_parts)
 
+    def _extract_cover_image(self, soup: BeautifulSoup) -> str:
+        """从meta标签中提取封面图片URL"""
+        # 尝试从og:image提取
+        og_image = soup.find("meta", {"property": "og:image"})
+        if og_image and og_image.get("content"):
+            return og_image.get("content")
+        
+        # 尝试从twitter:image提取
+        twitter_image = soup.find("meta", {"property": "twitter:image"})
+        if twitter_image and twitter_image.get("content"):
+            return twitter_image.get("content")
+        
+        return ""
+
     def _build_episode_info_from_json_ld(self, json_data: Dict[str, Any], url: str) -> EpisodeInfo:
         """从JSON-LD数据构建节目信息模型"""
         # 提取播客信息
         podcast_series = json_data.get("partOfSeries", {})
+        podcast_url = podcast_series.get("url", "")
+        
+        # 从播客URL中提取podcast_id
+        podcast_id = ""
+        if podcast_url:
+            try:
+                podcast_id = podcast_url.split("/podcast/")[-1].split("?")[0]
+            except:
+                pass
+        
         podcast_info = PodcastInfo(
             title=podcast_series.get("name", "未知播客"),
             author="未知作者",  # JSON-LD中没有作者信息，使用默认值
+            podcast_id=podcast_id,
+            podcast_url=podcast_url,
         )
 
         # 解析时长（从PT73M格式转换为毫秒）
@@ -336,6 +370,12 @@ class JsonScriptParser(ParserProtocol):
         except:
             pass
 
+        # 提取音频URL
+        audio_url = ""
+        associated_media = json_data.get("associatedMedia", {})
+        if isinstance(associated_media, dict):
+            audio_url = associated_media.get("contentUrl", "")
+
         # 构建节目信息
         return EpisodeInfo(
             title=json_data.get("name", "未知标题"),
@@ -344,6 +384,9 @@ class JsonScriptParser(ParserProtocol):
             pub_date=json_data.get("datePublished", ""),
             eid=episode_id,
             shownotes=json_data.get("description", ""),
+            episode_url=json_data.get("url", url),
+            audio_url=audio_url,
+            published_datetime=json_data.get("datePublished", ""),
         )
 
 

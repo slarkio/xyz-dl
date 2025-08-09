@@ -293,20 +293,8 @@ class XiaoYuZhouDL:
 
     def _build_markdown_content(self, episode_info: EpisodeInfo) -> str:
         """构建Markdown文件内容"""
-        title = episode_info.title
-        podcast_title = episode_info.podcast.title
-        podcast_author = episode_info.podcast.author
-
-        # 处理时长
-        duration_text = (
-            f"{episode_info.duration_minutes}分钟"
-            if episode_info.duration_minutes
-            else "未知"
-        )
-
-        # 处理发布时间
-        pub_date_text = episode_info.formatted_pub_date
-
+        from datetime import datetime
+        
         # 处理show notes
         show_notes = episode_info.shownotes or "暂无节目介绍"
 
@@ -318,24 +306,33 @@ class XiaoYuZhouDL:
             show_notes = re.sub(r"<[^>]+>", "", show_notes)
             show_notes = show_notes.strip()
 
+        # 构建YAML元数据
+        yaml_metadata = f"""---
+title: "{episode_info.title}"
+episode_id: "{episode_info.eid}"
+url: "{episode_info.episode_url or ''}"
+podcast_name: "{episode_info.podcast.title}"
+podcast_id: "{episode_info.podcast.podcast_id}"
+podcast_url: "{episode_info.podcast.podcast_url}"
+published_at: "{episode_info.published_datetime or episode_info.pub_date}"
+published_date: "{episode_info.formatted_pub_date}"
+published_datetime: "{episode_info.formatted_datetime}"
+duration_ms: {episode_info.duration}
+duration_minutes: {episode_info.duration_minutes}
+duration_text: "{episode_info.duration_text}"
+audio_url: "{episode_info.audio_url}"
+downloaded_by: "xyz-dl"
+downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
+---"""
+
         # 构建Markdown内容
-        md_content = f"""# {title}
+        md_content = f"""{yaml_metadata}
 
-**播客系列：** {podcast_title}
-**主播：** {podcast_author}  
-**时长：** {duration_text}
-**发布时间：** {pub_date_text}
-**Episode ID：** {episode_info.eid}
-
----
+# {episode_info.title}
 
 ## Show Notes
 
 {show_notes}
-
----
-
-*本文件由 xyz-dl 自动生成*
 """
 
         return md_content
