@@ -541,6 +541,30 @@ class UrlValidator:
         return url.startswith("https://www.xiaoyuzhoufm.com/episode/")
 
     @staticmethod
+    def is_episode_id(input_str: str) -> bool:
+        """判断输入是否为episode ID（而非URL）"""
+        # episode ID 格式判断：不包含协议、域名和路径分隔符，且不为空
+        if not input_str or input_str.strip() == "":
+            return False
+        input_str = input_str.strip()
+        return not input_str.startswith("http") and "/" not in input_str
+    
+    @staticmethod
+    def normalize_to_url(url_or_id: str) -> str:
+        """将 episode ID 或 URL 标准化为完整的 URL"""
+        url_or_id = url_or_id.strip()
+        
+        if UrlValidator.is_episode_id(url_or_id):
+            # 如果是 episode ID，构造完整的 URL
+            return f"https://www.xiaoyuzhoufm.com/episode/{url_or_id}"
+        elif UrlValidator.validate_xiaoyuzhou_url(url_or_id):
+            # 如果已经是有效的 URL，直接返回
+            return url_or_id
+        else:
+            # 既不是有效的 ID 也不是有效的 URL
+            raise ParseError(f"Invalid input: must be either a valid episode ID or Xiaoyuzhou URL: {url_or_id}")
+
+    @staticmethod
     def extract_episode_id(url: str) -> str:
         """从URL中提取节目ID"""
         if not UrlValidator.validate_xiaoyuzhou_url(url):

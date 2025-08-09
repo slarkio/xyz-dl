@@ -13,7 +13,7 @@ from .models import (
     Config,
 )
 from .parsers import CompositeParser, JsonScriptParser, HtmlFallbackParser
-from .config import get_config, load_config, save_config
+from .config import get_config
 from .exceptions import (
     XyzDlException,
     ValidationError,
@@ -56,8 +56,6 @@ __all__ = [
     "download_episode_sync",
     # 配置管理
     "get_config",
-    "load_config",
-    "save_config",
     # 异常类
     "XyzDlException",
     "ValidationError",

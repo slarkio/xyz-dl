@@ -86,6 +86,33 @@ class TestDownloadRequest:
                 url="https://www.xiaoyuzhoufm.com/episode/test123",
                 mode="invalid"
             )
+    
+    def test_episode_id_normalization(self):
+        """测试 episode ID 会被自动标准化为完整 URL"""
+        # 使用 episode ID 创建请求
+        request = DownloadRequest(url="12345678", mode="both")
+        
+        # 验证 URL 被标准化为完整 URL
+        expected_url = "https://www.xiaoyuzhoufm.com/episode/12345678"
+        assert str(request.url) == expected_url
+        
+        # 测试另一个 episode ID 格式
+        request2 = DownloadRequest(url="67890123", mode="audio")
+        expected_url2 = "https://www.xiaoyuzhoufm.com/episode/67890123"
+        assert str(request2.url) == expected_url2
+    
+    def test_invalid_episode_id_or_url(self):
+        """测试无效的 episode ID 或 URL"""
+        invalid_inputs = [
+            "https://example.com/episode/123",  # 错误的域名
+            "http://www.xiaoyuzhoufm.com/episode/123",  # 错误的协议
+            "",  # 空字符串
+            "/invalid/path"  # 无效路径
+        ]
+        
+        for invalid_input in invalid_inputs:
+            with pytest.raises(ValidationError):
+                DownloadRequest(url=invalid_input)
 
 
 class TestDownloadProgress:

@@ -86,7 +86,7 @@ class EpisodeInfo(BaseModel):
 class DownloadRequest(BaseModel):
     """下载请求模型"""
 
-    url: HttpUrl = Field(..., description="小宇宙播客节目URL")
+    url: str = Field(..., description="小宇宙播客节目URL或episode ID")
     download_dir: str = Field(default=".", description="下载目录")
     mode: str = Field(default="both", description="下载模式: audio, md, both")
 
@@ -102,11 +102,16 @@ class DownloadRequest(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_xiaoyuzhou_url(cls, v):
-        """验证URL必须是小宇宙播客URL"""
-        url_str = str(v)
-        if not url_str.startswith("https://www.xiaoyuzhoufm.com/episode/"):
-            raise ValueError("URL must be a Xiaoyuzhou episode page")
-        return v
+        """验证并标准化 URL（支持 episode ID 或完整 URL）"""
+        from .parsers import UrlValidator
+        
+        url_str = str(v).strip()
+        try:
+            # 使用 UrlValidator 标准化为完整的 URL
+            normalized_url = UrlValidator.normalize_to_url(url_str)
+            return normalized_url
+        except Exception as e:
+            raise ValueError(f"Invalid episode URL or ID: {url_str}. {str(e)}")
 
 
 class DownloadResult(BaseModel):

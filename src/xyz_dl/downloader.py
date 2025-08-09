@@ -95,9 +95,13 @@ class XiaoYuZhouDL:
         try:
             await self._create_session()
 
-            # 验证URL
-            if not UrlValidator.validate_xiaoyuzhou_url(str(request.url)):
-                raise ValidationError(f"Invalid Xiaoyuzhou URL: {request.url}")
+            # 标准化 URL（支持 episode ID 输入）
+            try:
+                normalized_url = UrlValidator.normalize_to_url(str(request.url))
+                # 更新请求对象的 URL 为标准化后的 URL
+                request.url = normalized_url
+            except Exception as e:
+                raise ValidationError(f"Invalid episode URL or ID: {request.url}. {str(e)}")
 
             # 解析节目信息
             episode_info, audio_url = await self._parse_episode(str(request.url))

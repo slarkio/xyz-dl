@@ -18,7 +18,7 @@ class TestUrlValidator:
         """测试有效的小宇宙URL"""
         valid_urls = [
             "https://www.xiaoyuzhoufm.com/episode/12345678",
-            "https://www.xiaoyuzhoufm.com/episode/abcd-efgh-1234",
+            "https://www.xiaoyuzhoufm.com/episode/67890123",
             "https://www.xiaoyuzhoufm.com/episode/test123?param=value"
         ]
         
@@ -43,6 +43,53 @@ class TestUrlValidator:
         url = "https://www.xiaoyuzhoufm.com/episode/test123?param=value"
         episode_id = UrlValidator.extract_episode_id(url)
         assert episode_id == "test123"
+    
+    def test_is_episode_id(self):
+        """测试判断是否为episode ID"""
+        # 有效的 episode ID（基于小宇宙的实际格式）
+        valid_ids = [
+            "12345678",
+            "67890123", 
+            "5f8a1b2c3d4e",
+            "abc123def456"
+        ]
+        
+        for episode_id in valid_ids:
+            assert UrlValidator.is_episode_id(episode_id)
+        
+        # 不是 episode ID（是URL）
+        invalid_ids = [
+            "https://www.xiaoyuzhoufm.com/episode/12345678",
+            "http://example.com",
+            "/path/to/something",
+            "ftp://example.com"
+        ]
+        
+        for invalid_id in invalid_ids:
+            assert not UrlValidator.is_episode_id(invalid_id)
+    
+    def test_normalize_to_url(self):
+        """测试将 episode ID 或 URL 标准化为 URL"""
+        # 测试 episode ID 转 URL
+        episode_id = "12345678"
+        expected_url = "https://www.xiaoyuzhoufm.com/episode/12345678"
+        assert UrlValidator.normalize_to_url(episode_id) == expected_url
+        
+        # 测试已有效的 URL 直接返回
+        valid_url = "https://www.xiaoyuzhoufm.com/episode/test123"
+        assert UrlValidator.normalize_to_url(valid_url) == valid_url
+        
+        # 测试无效输入抛出异常
+        invalid_inputs = [
+            "https://example.com/episode/123",  # 错误的域名
+            "http://www.xiaoyuzhoufm.com/episode/123",  # 错误的协议
+            "",  # 空字符串
+            "/invalid/path"  # 包含路径但不是有效URL
+        ]
+        
+        for invalid_input in invalid_inputs:
+            with pytest.raises(ParseError):
+                UrlValidator.normalize_to_url(invalid_input)
     
     def test_extract_episode_id_invalid_url(self):
         """测试从无效URL提取节目ID"""

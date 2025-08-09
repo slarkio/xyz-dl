@@ -25,7 +25,7 @@ from rich import print as rprint
 
 from .downloader import XiaoYuZhouDL, DownloadRequest
 from .models import DownloadProgress, Config
-from .config import get_config, create_default_config_file
+from .config import get_config
 from .exceptions import XyzDlException
 
 
@@ -88,13 +88,14 @@ class CLIApplication:
   xyz-dl -d ~/Downloads --mode both https://www.xiaoyuzhoufm.com/episode/12345678  
   xyz-dl --mode audio https://www.xiaoyuzhoufm.com/episode/12345678
   xyz-dl --mode md https://www.xiaoyuzhoufm.com/episode/12345678
-  xyz-dl --config  # 创建默认配置文件
+  xyz-dl 12345678  # 直接使用episode ID
+  xyz-dl --timeout 60 https://www.xiaoyuzhoufm.com/episode/12345678  # 设置超时时间
 
 更多信息请访问: https://github.com/yourusername/xyz-dl
             """,
         )
 
-        parser.add_argument("url", nargs="?", help="小宇宙播客episode页面URL")
+        parser.add_argument("url", nargs="?", help="小宇宙播客episode页面URL或episode ID")
 
         parser.add_argument(
             "-d", "--dir", default=".", help="下载目录 (默认: 当前目录)"
@@ -108,10 +109,11 @@ class CLIApplication:
         )
 
         parser.add_argument("-v", "--verbose", action="store_true", help="显示详细输出")
-
-        parser.add_argument("--config", action="store_true", help="创建默认配置文件")
-
-        parser.add_argument("--config-path", help="指定配置文件路径")
+        
+        # 常用配置参数
+        parser.add_argument("--timeout", type=int, help="请求超时时间(秒)，默认30")
+        parser.add_argument("--max-retries", type=int, help="最大重试次数，默认3")
+        parser.add_argument("--user-agent", help="用户代理字符串")
 
         parser.add_argument("--version", action="version", version="%(prog)s 2.0.0")
 
@@ -176,32 +178,6 @@ class CLIApplication:
         error_text = Text(f"❌ 错误: {error}", style="bold red")
         self.console.print(Panel(error_text, border_style="red"))
 
-    def create_config_file(self, config_path: Optional[str] = None):
-        """创建配置文件"""
-        try:
-            created_path = create_default_config_file(config_path)
-
-            success_text = Text("✅ 配置文件创建成功!", style="bold green")
-            self.console.print(Panel(success_text, border_style="green"))
-            self.console.print(f"📁 配置文件位置: [link]{created_path}[/link]")
-
-            # 显示配置说明
-            help_table = Table(title="📋 配置项说明", border_style="dim")
-            help_table.add_column("配置项", style="bold cyan")
-            help_table.add_column("说明", style="white")
-            help_table.add_column("默认值", style="dim")
-
-            help_table.add_row("timeout", "请求超时时间(秒)", "30")
-            help_table.add_row("max_retries", "最大重试次数", "3")
-            help_table.add_row("chunk_size", "下载块大小", "8192")
-            help_table.add_row("max_filename_length", "文件名最大长度", "200")
-            help_table.add_row("max_concurrent_downloads", "最大并发下载数", "3")
-
-            self.console.print()
-            self.console.print(help_table)
-
-        except Exception as e:
-            self.print_error(f"配置文件创建失败: {e}")
 
     async def run_download(self, args):
         """执行下载任务"""
@@ -211,8 +187,20 @@ class CLIApplication:
                 url=args.url, download_dir=args.dir, mode=args.mode
             )
 
-            # 创建下载器
+            # 加载基础配置
             config = get_config()
+            
+            # 从命令行参数覆盖配置
+            config_dict = config.model_dump()
+            if args.timeout is not None:
+                config_dict["timeout"] = args.timeout
+            if args.max_retries is not None:
+                config_dict["max_retries"] = args.max_retries
+            if args.user_agent is not None:
+                config_dict["user_agent"] = args.user_agent
+            
+            # 重新创建配置对象
+            config = Config(**config_dict)
             async with XiaoYuZhouDL(
                 config=config, progress_callback=self.progress_callback
             ) as downloader:
@@ -251,10 +239,6 @@ class CLIApplication:
         if not args.verbose:
             self.print_banner()
 
-        # 处理配置文件创建
-        if args.config:
-            self.create_config_file(args.config_path)
-            return 0
 
         # 验证URL参数
         if not args.url:

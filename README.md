@@ -1,141 +1,127 @@
-# xyz-dl - 小宇宙播客音频下载器
+# 🎧 xyz-dl - 小宇宙播客下载器
 
-从小宇宙播客平台下载音频文件和Show Notes的现代化Python程序。
+> ✨ 轻松下载小宇宙播客音频和文字内容，让你的播客收藏更自由！
 
-## 功能特性
+## 🌟 为什么选择 xyz-dl？
 
-- 🎵 从小宇宙播客 episode URL 提取音频源并下载
-- 📝 自动解析播客标题和主播信息，支持Show Notes下载
-- 🔧 智能文件命名（格式：主播名 - 节目名）
-- 📁 支持自定义下载目录
-- 📊 美化的实时下载进度显示
-- ✅ 文件重复检查和覆盖确认
-- 🚫 文件名非法字符自动清理
-- 🎯 多种下载模式：audio/md/both
-- ⚡ 异步下载支持，提升性能
-- 🛠️ 现代化CLI界面，配置文件支持
+🎵 **超简单使用** - 只需一个命令，音频和文字全搞定  
+📱 **两种输入方式** - 支持完整链接或简洁的ID，怎么方便怎么来  
+🎯 **智能文件命名** - 自动解析主播和节目信息，文件井井有条  
+🚀 **异步下载** - 快速稳定，还有美美的进度条  
+📝 **Show Notes 支持** - 不只是音频，播客的文字内容也能保存  
+🎨 **颜值很高** - 现代化界面，用起来心情都变好了  
 
-## 环境要求
-
-- Python 3.8+
-- 依赖库：aiohttp, aiofiles, beautifulsoup4, pydantic, rich
-
-## 安装方式
-
-### 使用 uv (推荐)
+## 🛠️ 安装
 
 ```bash
-# 克隆项目
+# 1. 克隆项目到本地
 git clone <repository-url>
 cd xyz-dl
 
-# 使用 uv 安装依赖
+# 2. 一键安装所有依赖（会自动创建 xyz-dl 命令）
 uv sync
-
-# 激活虚拟环境
-source .venv/bin/activate  # Linux/macOS
-# 或
-.venv\Scripts\activate     # Windows
 ```
 
-### 使用 pip
+*需要 Python 3.8+ 环境，如果没有 uv 的话先安装一下：`pip install uv`*
+
+## 🚀 开始使用
+
+### 最简单的用法
+```bash
+# 使用 episode ID（推荐，超简洁！）
+uv run xyz-dl 12345678
+
+# 使用完整链接
+uv run xyz-dl https://www.xiaoyuzhoufm.com/episode/12345678
+```
+
+### 更多玩法
 
 ```bash
-# 开发模式安装
-uv pip install -e .
+# 🎵 只下载音频
+uv run xyz-dl --mode audio 12345678
 
-# 或直接安装
-pip install .
+# 📝 只下载文字内容
+uv run xyz-dl --mode md 12345678
+
+# 📁 指定下载文件夹
+uv run xyz-dl -d ~/我的播客收藏 12345678
+
+# 🔧 自定义配置（网络不好时特别有用）
+uv run xyz-dl --timeout 60 --max-retries 5 12345678
+
+# 👀 想看详细下载过程
+uv run xyz-dl -v 12345678
 ```
 
-## 使用方法
+## 📋 参数说明
 
-### 安装后使用（推荐）
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `url` | 播客链接或 episode ID | 必填 |
+| `-d, --dir` | 下载到哪个文件夹 | 当前文件夹 |
+| `--mode` | 下载什么：`audio`(音频) / `md`(文字) / `both`(都要) | `both` |
+| `--timeout` | 网络超时时间（秒） | 30 |
+| `--max-retries` | 网络不好时重试几次 | 3 |
+| `--user-agent` | 自定义用户代理（高级用法） | 浏览器标准 |
+| `-v, --verbose` | 显示详细信息 | 关闭 |
+
+## 💡 怎么获取 episode ID？
+
+超简单！在小宇宙 App 中：
+
+1. 📱 打开想下载的播客节目
+2. 👆 点击「分享」按钮  
+3. 📋 复制链接：`https://www.xiaoyuzhoufm.com/episode/12345678`
+4. ✂️ 取最后的数字部分：`12345678`
+
+或者直接用完整链接也可以，xyz-dl 都认识！
+
+## 📂 文件会保存成什么样？
+
+xyz-dl 会智能解析播客信息，生成规整的文件名：
+
+```
+12345678_张三 - 科技闲聊第42期.mp3
+12345678_张三 - 科技闲聊第42期.md
+```
+
+格式：`[Episode ID]_[主播名] - [节目名].[扩展名]`
+
+🧹 **自动清理**：文件名中的特殊字符会被自动处理，确保在各种系统上都能正常保存
+
+## ⚙️ 高级配置
+
+如果你是重度用户，可以设置环境变量来自定义默认行为：
 
 ```bash
-# 基本用法
-xyz-dl <episode_url>
+# 设置默认超时时间
+export XYZ_DL_TIMEOUT=60
 
-# 指定下载目录
-xyz-dl -d ~/Downloads <episode_url>
+# 设置默认重试次数  
+export XYZ_DL_MAX_RETRIES=5
 
-# 选择下载模式
-xyz-dl --mode audio <episode_url>     # 仅下载音频
-xyz-dl --mode md <episode_url>        # 仅下载Show Notes
-xyz-dl --mode both <episode_url>      # 同时下载（默认）
-
-# 详细输出模式
-xyz-dl -v <episode_url>
+# 自定义用户代理
+export XYZ_DL_USER_AGENT="我的播客下载器"
 ```
 
-### 开发模式使用
+## 🆘 遇到问题？
 
-```bash
-# 通过模块调用
-python -m src.xyz_dl <episode_url>
-python -m src.xyz_dl -d ~/Downloads <episode_url>
-```
+**网络问题**：试试增加超时时间和重试次数  
+**下载失败**：检查链接是否正确，或者换个网络环境  
+**文件找不到**：确认下载目录是否有写入权限  
 
-### 完整示例
+## ⚠️ 使用须知
 
-```bash
-xyz-dl https://www.xiaoyuzhoufm.com/episode/12345678
-xyz-dl -d ~/Downloads --mode both https://www.xiaoyuzhoufm.com/episode/12345678
-```
+- 🏠 **仅供个人使用**：下载的内容请勿商用或二次分发
+- 🤝 **尊重原创**：请支持喜欢的播客主，考虑付费订阅
+- 🌐 **合理使用**：不要频繁请求，给服务器一些喘息空间
+- 📖 **遵守条款**：使用时请遵守小宇宙平台的使用协议
 
-## 参数说明
+## 💝 致谢
 
-- `url`: 小宇宙播客 episode 页面 URL（必需）
-- `-d, --dir`: 下载目录（默认：当前目录）
-- `--mode`: 下载模式（audio/md/both，默认：both）
-- `-v, --verbose`: 显示详细输出
-- `--config`: 创建默认配置文件
-- `--config-path`: 指定配置文件路径
-- `--version`: 显示版本信息
-- `-h, --help`: 显示帮助信息
+感谢小宇宙提供优质的播客平台，感谢所有创作优质内容的播客主们！
 
-## URL 格式要求
+---
 
-支持的 URL 格式：
-```
-https://www.xiaoyuzhoufm.com/episode/[episode_id]
-```
-
-## 文件命名规则
-
-程序会自动解析页面标题，并按以下规则命名：
-
-1. **标准格式**：主播名 - 节目名.mp3
-2. **非法字符清理**：自动移除 `<>:"/\|?*` 等字符
-3. **长度限制**：文件名超过 200 字符会被截断
-4. **空格处理**：多余空格会被合并
-
-## 错误处理
-
-程序包含完善的错误处理机制：
-
-- **网络错误**：超时、连接失败等网络问题
-- **页面解析错误**：找不到音频文件或标题信息
-- **文件操作错误**：磁盘空间不足、权限问题等
-- **URL 格式错误**：非小宇宙 episode 页面 URL
-
-## 技术实现
-
-- **异步HTTP**：使用 aiohttp 库处理异步网络请求
-- **页面解析**：使用 BeautifulSoup 解析 HTML 页面
-- **数据验证**：使用 Pydantic 进行数据模型验证
-- **美化界面**：使用 Rich 库提供美观的CLI体验
-- **流式下载**：支持大文件下载和美化进度显示
-- **配置管理**：支持配置文件和环境变量配置
-- **用户代理**：模拟浏览器请求避免被封禁
-
-## 注意事项
-
-1. 请确保有稳定的网络连接
-2. 下载的内容仅供个人学习使用
-3. 请遵守小宇宙平台的使用条款
-4. 建议适度使用，避免频繁请求
-
-## 许可证
-
-本项目仅供学习和个人使用。
+*Made with ❤️ for podcast lovers*
