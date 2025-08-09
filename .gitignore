@@ -190,3 +190,6 @@ config.ini
 .claude/
 specs/
 CLAUDE.md
+
+# 测试下载目录
+tests/test_data/downloads/

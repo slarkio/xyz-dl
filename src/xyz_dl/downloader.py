@@ -185,6 +185,29 @@ class XiaoYuZhouDL:
 
         return filename.strip()
 
+    def _create_safe_filename(self, title: str, author: str, extension: str = ".md") -> str:
+        """创建安全的文件名
+        
+        Args:
+            title: 节目标题
+            author: 作者/主播名
+            extension: 文件扩展名
+            
+        Returns:
+            清理后的安全文件名
+        """
+        # 构建基础文件名：作者 - 标题
+        if author and author != "未知作者":
+            base_name = f"{author} - {title}"
+        else:
+            base_name = title
+        
+        # 清理文件名
+        safe_name = self._sanitize_filename(base_name)
+        
+        # 添加扩展名
+        return safe_name + extension
+
     @wrap_exception
     async def _download_audio(
         self, audio_url: str, filename: str, download_dir: str
