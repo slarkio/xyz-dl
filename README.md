@@ -90,6 +90,35 @@ xyz-dl 会智能解析播客信息，生成规整的文件名：
 
 🧹 **自动清理**：文件名中的特殊字符会被自动处理，确保在各种系统上都能正常保存
 
+### 📝 Markdown 文件元数据说明
+
+下载的 `.md` 文件使用 YAML Front Matter 格式保存完整的播客元信息，包含以下字段：
+
+**📋 基础信息**
+- `title`: 节目标题
+- `podcast_name`: 播客名称  
+- `duration_text`: 播放时长
+
+**🔗 链接信息**
+- `url`: 节目链接
+- `podcast_url`: 播客主页链接
+- `audio_url`: 音频文件地址
+
+**🕒 时间信息**  
+- `published_at`: 发布时间（UTC格式）
+- `published_date`: 发布日期（本地格式）
+- `published_datetime`: 发布时间（可读格式）
+
+**🆔 标识信息**
+- `episode_id`: 节目唯一ID
+- `podcast_id`: 播客唯一ID
+
+**📊 下载记录**
+- `downloaded_by`: 下载工具标识
+- `downloaded_at`: 下载时间戳
+
+这种标准化的元数据格式便于后续数据处理和搜索，支持所有兼容 YAML Front Matter 的工具使用。
+
 ## ⚙️ 高级配置
 
 如果你是重度用户，可以设置环境变量来自定义默认行为：
