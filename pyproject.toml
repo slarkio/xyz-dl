@@ -1,22 +1,20 @@
 [project]
 name = "xyz-dl"
-version = "1.0.0"
-description = "小宇宙播客音频下载器"
+version = "2.0.0"
+description = "小宇宙播客音频下载器 - 现代化异步版本"
 authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.6"
-keywords = ["podcast", "downloader", "xiaoyuzhou", "audio"]
+requires-python = ">=3.8"
+keywords = ["podcast", "downloader", "xiaoyuzhou", "audio", "async"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -27,21 +25,28 @@ classifiers = [
 ]
 
 dependencies = [
-    "requests>=2.25.0",
-    "beautifulsoup4>=4.9.0"
+    "aiohttp>=3.8.0",
+    "aiofiles>=0.8.0",
+    "beautifulsoup4>=4.9.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "rich>=12.0.0"
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=6.0",
     "pytest-cov",
+    "pytest-asyncio>=0.21.0",
     "black",
     "isort",
-    "flake8"
+    "flake8",
+    "mypy",
+    "types-aiofiles"
 ]
 
 [project.scripts]
-xyz-dl = "xyz_dl:main"
+xyz-dl = "xyz_dl.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/xyz-dl"
@@ -53,11 +58,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src"]
 
 [tool.black]
 line-length = 88
-target-version = ['py36']
+target-version = ['py38']
 include = '\.pyi?$'
 extend-exclude = '''
 /(

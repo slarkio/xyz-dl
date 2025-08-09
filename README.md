@@ -1,21 +1,24 @@
 # xyz-dl - 小宇宙播客音频下载器
 
-从小宇宙播客平台下载音频文件的 Python 单文件程序。
+从小宇宙播客平台下载音频文件和Show Notes的现代化Python程序。
 
 ## 功能特性
 
 - 🎵 从小宇宙播客 episode URL 提取音频源并下载
-- 📝 自动解析播客标题和主播信息
+- 📝 自动解析播客标题和主播信息，支持Show Notes下载
 - 🔧 智能文件命名（格式：主播名 - 节目名）
 - 📁 支持自定义下载目录
-- 📊 实时下载进度显示
+- 📊 美化的实时下载进度显示
 - ✅ 文件重复检查和覆盖确认
 - 🚫 文件名非法字符自动清理
+- 🎯 多种下载模式：audio/md/both
+- ⚡ 异步下载支持，提升性能
+- 🛠️ 现代化CLI界面，配置文件支持
 
 ## 环境要求
 
-- Python 3.6+
-- 依赖库：requests, beautifulsoup4
+- Python 3.8+
+- 依赖库：aiohttp, aiofiles, beautifulsoup4, pydantic, rich
 
 ## 安装方式
 
@@ -38,41 +41,57 @@ source .venv/bin/activate  # Linux/macOS
 ### 使用 pip
 
 ```bash
-pip install -r requirements.txt
+# 开发模式安装
+uv pip install -e .
+
+# 或直接安装
+pip install .
 ```
 
 ## 使用方法
 
-### 基本用法
+### 安装后使用（推荐）
 
 ```bash
-python xyz-dl.py <episode_url>
+# 基本用法
+xyz-dl <episode_url>
+
+# 指定下载目录
+xyz-dl -d ~/Downloads <episode_url>
+
+# 选择下载模式
+xyz-dl --mode audio <episode_url>     # 仅下载音频
+xyz-dl --mode md <episode_url>        # 仅下载Show Notes
+xyz-dl --mode both <episode_url>      # 同时下载（默认）
+
+# 详细输出模式
+xyz-dl -v <episode_url>
 ```
 
-### 指定下载目录
+### 开发模式使用
 
 ```bash
-python xyz-dl.py -d ~/Downloads <episode_url>
-```
-
-### 详细输出模式
-
-```bash
-python xyz-dl.py -v <episode_url>
+# 通过模块调用
+python -m src.xyz_dl <episode_url>
+python -m src.xyz_dl -d ~/Downloads <episode_url>
 ```
 
 ### 完整示例
 
 ```bash
-python xyz-dl.py https://www.xiaoyuzhoufm.com/episode/12345678
-python xyz-dl.py -d ~/Downloads https://www.xiaoyuzhoufm.com/episode/12345678
+xyz-dl https://www.xiaoyuzhoufm.com/episode/12345678
+xyz-dl -d ~/Downloads --mode both https://www.xiaoyuzhoufm.com/episode/12345678
 ```
 
 ## 参数说明
 
 - `url`: 小宇宙播客 episode 页面 URL（必需）
 - `-d, --dir`: 下载目录（默认：当前目录）
+- `--mode`: 下载模式（audio/md/both，默认：both）
 - `-v, --verbose`: 显示详细输出
+- `--config`: 创建默认配置文件
+- `--config-path`: 指定配置文件路径
+- `--version`: 显示版本信息
 - `-h, --help`: 显示帮助信息
 
 ## URL 格式要求
@@ -102,9 +121,12 @@ https://www.xiaoyuzhoufm.com/episode/[episode_id]
 
 ## 技术实现
 
-- **HTTP 请求**：使用 requests 库处理网络请求
+- **异步HTTP**：使用 aiohttp 库处理异步网络请求
 - **页面解析**：使用 BeautifulSoup 解析 HTML 页面
-- **流式下载**：支持大文件下载和进度显示
+- **数据验证**：使用 Pydantic 进行数据模型验证
+- **美化界面**：使用 Rich 库提供美观的CLI体验
+- **流式下载**：支持大文件下载和美化进度显示
+- **配置管理**：支持配置文件和环境变量配置
 - **用户代理**：模拟浏览器请求避免被封禁
 
 ## 注意事项
