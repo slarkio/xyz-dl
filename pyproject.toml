@@ -3,7 +3,7 @@ name = "xyz-dl"
 version = "2.0.0"
 description = "小宇宙播客音频下载器 - 现代化异步版本"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "slarkio", email = "slarkio@example.com"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -49,16 +49,16 @@ dev = [
 xyz-dl = "xyz_dl.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/xyz-dl"
-Repository = "https://github.com/yourusername/xyz-dl.git"
-Issues = "https://github.com/yourusername/xyz-dl/issues"
+Homepage = "https://github.com/slarkio/xyz-dl"
+Repository = "https://github.com/slarkio/xyz-dl.git"
+Issues = "https://github.com/slarkio/xyz-dl/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/xyz_dl"]
 
 [tool.black]
 line-length = 88

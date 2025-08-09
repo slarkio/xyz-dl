@@ -10,6 +10,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable, Union, Dict, Any
 import aiohttp
+import sys
+from rich.progress import (
+    Progress,
+    TaskID,
+    BarColumn,
+    DownloadColumn,
+    TransferSpeedColumn,
+    TimeRemainingColumn,
+    SpinnerColumn,
+    TextColumn,
+    FileSizeColumn,
+)
 
 from .models import (
     DownloadRequest,
@@ -56,6 +68,13 @@ class XiaoYuZhouDL:
         # HTTP会话配置
         self._session: Optional[aiohttp.ClientSession] = None
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_downloads)
+        
+        # 文件覆盖控制标志
+        self._overwrite_all = False
+        self._skip_all = False
+        
+        # Rich进度条配置
+        self._progress: Optional[Progress] = None
 
     async def __aenter__(self):
         """异步上下文管理器入口"""
@@ -78,6 +97,22 @@ class XiaoYuZhouDL:
         if self._session:
             await self._session.close()
             self._session = None
+    
+    def _create_progress_bar(self) -> Progress:
+        """创建rich进度条"""
+        return Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=40),
+            "[progress.percentage]{task.percentage:>3.1f}%",
+            "•",
+            DownloadColumn(),
+            "•",
+            TransferSpeedColumn(),
+            "•",
+            TimeRemainingColumn(),
+            refresh_per_second=4,
+        )
 
     async def download(self, request: Union[DownloadRequest, str]) -> DownloadResult:
         """主下载方法
@@ -111,7 +146,13 @@ class XiaoYuZhouDL:
 
             result = DownloadResult(success=True, episode_info=episode_info)
 
-            # 根据模式执行下载
+            # 根据模式执行下载 - both模式优先下载md
+            if request.mode in ["md", "both"]:
+                md_path = await self._generate_markdown(
+                    episode_info, filename, request.download_dir
+                )
+                result.md_path = md_path
+
             if request.mode in ["audio", "both"]:
                 if not audio_url:
                     raise ParseError("Audio URL not found", url=str(request.url))
@@ -120,12 +161,6 @@ class XiaoYuZhouDL:
                     audio_url, filename, request.download_dir
                 )
                 result.audio_path = audio_path
-
-            if request.mode in ["md", "both"]:
-                md_path = await self._generate_markdown(
-                    episode_info, filename, request.download_dir
-                )
-                result.md_path = md_path
 
             return result
 
@@ -189,6 +224,36 @@ class XiaoYuZhouDL:
 
         return filename.strip()
 
+    def _ask_file_overwrite_confirmation(self, file_path: Path, file_type: str = "文件") -> bool:
+        """询问用户是否覆盖已存在的文件
+        
+        Args:
+            file_path: 文件路径
+            file_type: 文件类型描述
+            
+        Returns:
+            True表示覆盖，False表示跳过
+        """
+        print(f"\n⚠️  {file_type} 已存在: {file_path.name}")
+        
+        while True:
+            choice = input("是否覆盖? (y)覆盖 / (n)跳过 / (a)全部覆盖 / (s)全部跳过: ").strip().lower()
+            
+            if choice in ['y', 'yes', '覆盖']:
+                return True
+            elif choice in ['n', 'no', '跳过']:
+                return False
+            elif choice in ['a', 'all', '全部覆盖']:
+                # 设置全局覆盖标志
+                self._overwrite_all = True
+                return True
+            elif choice in ['s', 'skip', '全部跳过']:
+                # 设置全局跳过标志
+                self._skip_all = True
+                return False
+            else:
+                print("请输入有效选择: y/n/a/s")
+
     def _create_safe_filename(self, title: str, author: str, extension: str = ".md") -> str:
         """创建安全的文件名
         
@@ -212,6 +277,32 @@ class XiaoYuZhouDL:
         # 添加扩展名
         return safe_name + extension
 
+    def _get_audio_extension(self, audio_url: str, content_type: Optional[str] = None) -> str:
+        """根据URL和内容类型确定音频文件扩展名"""
+        # 优先从content-type判断
+        if content_type:
+            if "mp4" in content_type or "m4a" in content_type:
+                return ".m4a"
+            elif "mpeg" in content_type or "mp3" in content_type:
+                return ".mp3"
+            elif "wav" in content_type:
+                return ".wav"
+            elif "ogg" in content_type:
+                return ".ogg"
+        
+        # 从URL扩展名判断
+        if audio_url.endswith('.m4a'):
+            return ".m4a"
+        elif audio_url.endswith('.mp3'):
+            return ".mp3"
+        elif audio_url.endswith('.wav'):
+            return ".wav"
+        elif audio_url.endswith('.ogg'):
+            return ".ogg"
+        
+        # 默认使用m4a（小宇宙大多数音频是m4a格式）
+        return ".m4a"
+
     @wrap_exception
     async def _download_audio(
         self, audio_url: str, filename: str, download_dir: str
@@ -220,12 +311,28 @@ class XiaoYuZhouDL:
         download_path = Path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
 
-        file_path = download_path / f"{filename}.mp3"
+        # 先发送HEAD请求获取content-type以确定正确的文件扩展名
+        content_type = None
+        try:
+            async with self._session.head(audio_url) as response:
+                content_type = response.headers.get('content-type')
+        except:
+            pass  # 如果HEAD请求失败，继续使用URL判断
+        
+        # 确定正确的文件扩展名
+        extension = self._get_audio_extension(audio_url, content_type)
+        file_path = download_path / f"{filename}{extension}"
 
         # 检查文件是否已存在
         if file_path.exists():
-            print(f"File already exists: {file_path}")
-            # 在实际应用中可以添加覆盖确认逻辑
+            if self._skip_all:
+                print(f"⏭️  跳过已存在的音频文件: {file_path.name}")
+                return str(file_path)
+            elif not self._overwrite_all:
+                should_overwrite = self._ask_file_overwrite_confirmation(file_path, "音频文件")
+                if not should_overwrite:
+                    print(f"⏭️  跳过音频文件: {file_path.name}")
+                    return str(file_path)
 
         async with self._semaphore:  # 限制并发下载数
             try:
@@ -240,22 +347,31 @@ class XiaoYuZhouDL:
                     total_size = int(response.headers.get("content-length", 0))
                     downloaded = 0
 
-                    # 初始化进度
-                    progress = DownloadProgress(filename=filename, total=total_size)
+                    # 使用rich进度条
+                    with self._create_progress_bar() as progress:
+                        task = progress.add_task(
+                            f"🎵 下载音频: {file_path.name}",
+                            total=total_size
+                        )
 
-                    async with aiofiles.open(file_path, "wb") as f:
-                        async for chunk in response.content.iter_chunked(
-                            self.config.chunk_size
-                        ):
-                            await f.write(chunk)
-                            downloaded += len(chunk)
+                        async with aiofiles.open(file_path, "wb") as f:
+                            async for chunk in response.content.iter_chunked(
+                                self.config.chunk_size
+                            ):
+                                await f.write(chunk)
+                                downloaded += len(chunk)
+                                progress.update(task, completed=downloaded)
 
-                            # 更新进度
-                            progress.downloaded = downloaded
+                                # 保持原有的进度回调兼容性
+                                if self.progress_callback:
+                                    progress_info = DownloadProgress(
+                                        filename=file_path.name,
+                                        downloaded=downloaded,
+                                        total=total_size
+                                    )
+                                    self.progress_callback(progress_info)
 
-                            if self.progress_callback:
-                                self.progress_callback(progress)
-
+                    print(f"✅ 音频文件已保存: {file_path.name}")
                     return str(file_path)
 
             except aiohttp.ClientError as e:
@@ -279,6 +395,17 @@ class XiaoYuZhouDL:
 
         md_file_path = download_path / f"{filename}.md"
 
+        # 检查文件是否已存在
+        if md_file_path.exists():
+            if self._skip_all:
+                print(f"⏭️  跳过已存在的Markdown文件: {md_file_path.name}")
+                return str(md_file_path)
+            elif not self._overwrite_all:
+                should_overwrite = self._ask_file_overwrite_confirmation(md_file_path, "Markdown文件")
+                if not should_overwrite:
+                    print(f"⏭️  跳过Markdown文件: {md_file_path.name}")
+                    return str(md_file_path)
+
         # 构建Markdown内容
         md_content = self._build_markdown_content(episode_info)
 
@@ -286,6 +413,7 @@ class XiaoYuZhouDL:
             async with aiofiles.open(md_file_path, "w", encoding="utf-8") as f:
                 await f.write(md_content)
 
+            print(f"✅ Markdown文件已保存: {md_file_path.name}")
             return str(md_file_path)
 
         except IOError as e:

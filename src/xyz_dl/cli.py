@@ -91,7 +91,7 @@ class CLIApplication:
   xyz-dl 12345678  # 直接使用episode ID
   xyz-dl --timeout 60 https://www.xiaoyuzhoufm.com/episode/12345678  # 设置超时时间
 
-更多信息请访问: https://github.com/yourusername/xyz-dl
+更多信息请访问: https://github.com/slarkio/xyz-dl
             """,
         )
 

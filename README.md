@@ -15,7 +15,7 @@
 
 ```bash
 # 1. 克隆项目到本地
-git clone <repository-url>
+git clone https://github.com/slarkio/xyz-dl.git
 cd xyz-dl
 
 # 2. 一键安装所有依赖（会自动创建 xyz-dl 命令）

@@ -8,6 +8,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+data/
 eggs/
 .eggs/
 lib/
@@ -138,7 +139,6 @@ cython_debug/
 
 # uv
 .uv/
-uv.lock
 
 # VS Code
 .vscode/
@@ -160,11 +160,22 @@ ehthumbs_vista.db
 Desktop.ini
 $RECYCLE.BIN/
 
-# Downloaded audio files
+# Downloaded files from xyz-dl
 *.mp3
+*.mp4
 *.m4a
 *.wav
 *.flac
+*.ogg
+
+# Downloaded Show Notes (Markdown files)
+# 注意：这里只忽略根目录和常见下载目录中的md文件，保留项目文档
+/downloads/*.md
+/Downloads/*.md
+/下载/*.md
+/data/*.md
+/*_*.md
+/[0-9]*_*.md
 
 # Temporary files
 *.tmp
