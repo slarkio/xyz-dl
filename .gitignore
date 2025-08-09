@@ -185,3 +185,8 @@ config.ini
 *.bak
 *.backup
 *~
+
+# Claude related files
+.claude/
+specs/
+CLAUDE.md
