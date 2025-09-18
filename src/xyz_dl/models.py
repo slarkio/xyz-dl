@@ -4,8 +4,9 @@
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, HttpUrl, Field, field_validator, ConfigDict
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
 class PodcastInfo(BaseModel):
@@ -28,10 +29,10 @@ class EpisodeInfo(BaseModel):
     pub_date: str = Field(default="", description="发布日期")
     eid: str = Field(default="", description="节目ID")
     shownotes: str = Field(default="", description="节目介绍")
-    
+
     # 新增的元数据字段
     episode_url: str = Field(default="", description="节目完整URL")
-    audio_url: str = Field(default="", description="音频文件URL") 
+    audio_url: str = Field(default="", description="音频文件URL")
     cover_image: str = Field(default="", description="节目封面图片URL")
     published_datetime: str = Field(default="", description="精确发布时间(ISO格式)")
 
@@ -105,7 +106,7 @@ class DownloadRequest(BaseModel):
     def validate_xiaoyuzhou_url(cls, v):
         """验证并标准化 URL（支持 episode ID 或完整 URL）"""
         from .parsers import UrlValidator
-        
+
         url_str = str(v).strip()
         try:
             # 使用 UrlValidator 标准化为完整的 URL

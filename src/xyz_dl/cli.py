@@ -3,30 +3,30 @@
 使用 Rich 库提供美化的命令行体验
 """
 
-import sys
-import asyncio
 import argparse
-from typing import Optional
+import asyncio
+import sys
 from pathlib import Path
+from typing import Optional
 
+from rich import print as rprint
 from rich.console import Console
+from rich.panel import Panel
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
     TimeElapsedColumn,
 )
-from rich.panel import Panel
-from rich.text import Text
 from rich.table import Table
-from rich import print as rprint
+from rich.text import Text
 
-from .downloader import XiaoYuZhouDL, DownloadRequest
-from .models import DownloadProgress, Config
 from .config import get_config
+from .downloader import DownloadRequest, XiaoYuZhouDL
 from .exceptions import XyzDlException
+from .models import Config, DownloadProgress
 
 
 class RichProgressHandler:
@@ -97,7 +97,9 @@ class CLIApplication:
             """,
         )
 
-        parser.add_argument("url", nargs="?", help="小宇宙播客episode页面URL或episode ID")
+        parser.add_argument(
+            "url", nargs="?", help="小宇宙播客episode页面URL或episode ID"
+        )
 
         parser.add_argument(
             "-d", "--dir", default=".", help="下载目录 (默认: 当前目录)"
@@ -111,7 +113,12 @@ class CLIApplication:
         )
 
         parser.add_argument("-v", "--verbose", action="store_true", help="显示详细输出")
-        parser.add_argument("-u", "--url-only", action="store_true", help="只获取音频下载地址，不实际下载文件")
+        parser.add_argument(
+            "-u",
+            "--url-only",
+            action="store_true",
+            help="只获取音频下载地址，不实际下载文件",
+        )
 
         # 常用配置参数
         parser.add_argument("--timeout", type=int, help="请求超时时间(秒)，默认30")
@@ -194,18 +201,20 @@ class CLIApplication:
         error_text = Text(f"❌ 错误: {error}", style="bold red")
         self.console.print(Panel(error_text, border_style="red"))
 
-
     async def run_download(self, args):
         """执行下载任务"""
         try:
             # 创建下载请求
             request = DownloadRequest(
-                url=args.url, download_dir=args.dir, mode=args.mode, url_only=args.url_only
+                url=args.url,
+                download_dir=args.dir,
+                mode=args.mode,
+                url_only=args.url_only,
             )
 
             # 加载基础配置
             config = get_config()
-            
+
             # 从命令行参数覆盖配置
             config_dict = config.model_dump()
             if args.timeout is not None:
@@ -214,7 +223,7 @@ class CLIApplication:
                 config_dict["max_retries"] = args.max_retries
             if args.user_agent is not None:
                 config_dict["user_agent"] = args.user_agent
-            
+
             # 重新创建配置对象
             config = Config(**config_dict)
             async with XiaoYuZhouDL(
@@ -257,7 +266,6 @@ class CLIApplication:
         # 显示横幅
         if not args.verbose:
             self.print_banner()
-
 
         # 验证URL参数
         if not args.url:

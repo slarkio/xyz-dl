@@ -3,14 +3,15 @@
 支持从环境变量、配置文件等多种来源加载配置
 """
 
-import os
 import json
+import os
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Any, Dict, Optional, Union
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .models import Config
 from .exceptions import ConfigurationError
+from .models import Config
 
 
 class Settings(BaseSettings):
@@ -86,8 +87,6 @@ config_manager = ConfigManager()
 def get_config() -> Config:
     """获取全局配置"""
     return config_manager.get_config()
-
-
 
 
 # 环境变量检查
