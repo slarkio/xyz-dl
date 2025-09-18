@@ -141,6 +141,15 @@ class XiaoYuZhouDL:
             # 解析节目信息
             episode_info, audio_url = await self._parse_episode(str(request.url))
 
+            # 如果是只获取URL模式，直接返回URL信息
+            if request.url_only:
+                if not audio_url:
+                    raise ParseError("Audio URL not found", url=str(request.url))
+
+                # 确保将audio_url保存到episode_info中
+                episode_info.audio_url = audio_url
+                return DownloadResult(success=True, episode_info=episode_info)
+
             # 生成文件名
             filename = self._generate_filename(episode_info)
 

@@ -85,10 +85,12 @@ class CLIApplication:
             epilog="""
 使用示例:
   xyz-dl https://www.xiaoyuzhoufm.com/episode/12345678
-  xyz-dl -d ~/Downloads --mode both https://www.xiaoyuzhoufm.com/episode/12345678  
+  xyz-dl -d ~/Downloads --mode both https://www.xiaoyuzhoufm.com/episode/12345678
   xyz-dl --mode audio https://www.xiaoyuzhoufm.com/episode/12345678
   xyz-dl --mode md https://www.xiaoyuzhoufm.com/episode/12345678
   xyz-dl 12345678  # 直接使用episode ID
+  xyz-dl -u https://www.xiaoyuzhoufm.com/episode/12345678  # 只获取下载地址
+  xyz-dl --url-only 12345678  # 只获取下载地址(使用episode ID)
   xyz-dl --timeout 60 https://www.xiaoyuzhoufm.com/episode/12345678  # 设置超时时间
 
 更多信息请访问: https://github.com/slarkio/xyz-dl
@@ -109,7 +111,8 @@ class CLIApplication:
         )
 
         parser.add_argument("-v", "--verbose", action="store_true", help="显示详细输出")
-        
+        parser.add_argument("-u", "--url-only", action="store_true", help="只获取音频下载地址，不实际下载文件")
+
         # 常用配置参数
         parser.add_argument("--timeout", type=int, help="请求超时时间(秒)，默认30")
         parser.add_argument("--max-retries", type=int, help="最大重试次数，默认3")
@@ -173,6 +176,19 @@ class CLIApplication:
         if result.md_path:
             self.console.print(f"📝 Show Notes: [link]{result.md_path}[/link]")
 
+    def print_url_only_result(self, result):
+        """打印URL获取结果"""
+        if result.episode_info and result.episode_info.audio_url:
+            url_text = Text("🔗 音频下载地址:", style="bold blue")
+            self.console.print(Panel(url_text, border_style="blue"))
+
+            # 突出显示URL，便于复制
+            self.console.print(f"[yellow]{result.episode_info.audio_url}[/yellow]")
+            self.console.print()
+            self.console.print("[dim]提示: 可以复制上面的URL进行手动下载[/dim]")
+        else:
+            self.print_error("未能获取到音频下载地址")
+
     def print_error(self, error: str):
         """打印错误信息"""
         error_text = Text(f"❌ 错误: {error}", style="bold red")
@@ -184,7 +200,7 @@ class CLIApplication:
         try:
             # 创建下载请求
             request = DownloadRequest(
-                url=args.url, download_dir=args.dir, mode=args.mode
+                url=args.url, download_dir=args.dir, mode=args.mode, url_only=args.url_only
             )
 
             # 加载基础配置
@@ -213,7 +229,10 @@ class CLIApplication:
 
                 if result.success:
                     self.print_episode_info(result)
-                    self.print_success_result(result)
+                    if args.url_only:
+                        self.print_url_only_result(result)
+                    else:
+                        self.print_success_result(result)
                 else:
                     self.print_error(result.error)
                     return 1

@@ -89,6 +89,7 @@ class DownloadRequest(BaseModel):
     url: str = Field(..., description="小宇宙播客节目URL或episode ID")
     download_dir: str = Field(default=".", description="下载目录")
     mode: str = Field(default="both", description="下载模式: audio, md, both")
+    url_only: bool = Field(default=False, description="只获取下载地址，不实际下载")
 
     @field_validator("mode")
     @classmethod

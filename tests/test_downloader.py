@@ -111,3 +111,85 @@ class TestBackwardCompatibility:
         
         assert downloader.validate_url("https://www.xiaoyuzhoufm.com/episode/test")
         assert not downloader.validate_url("https://example.com/test")
+
+
+class TestUrlOnlyMode:
+    """测试只获取URL模式"""
+
+    @pytest.mark.asyncio
+    async def test_url_only_request_creation(self):
+        """测试创建url_only请求"""
+        request = DownloadRequest(
+            url="https://www.xiaoyuzhoufm.com/episode/6745c73fe0ab7e4a32ae6ad1",
+            url_only=True
+        )
+
+        assert request.url_only is True
+        assert request.mode == "both"  # 默认模式
+        assert request.download_dir == "."
+
+    @pytest.mark.asyncio
+    async def test_url_only_mode_with_mock_parser(self):
+        """测试url_only模式使用模拟解析器"""
+        # 创建模拟的parser
+        mock_parser = Mock()
+
+        # 模拟episode信息
+        mock_podcast = PodcastInfo(title="测试播客", author="测试作者")
+        mock_episode = EpisodeInfo(
+            title="测试节目",
+            podcast=mock_podcast,
+            eid="6745c73fe0ab7e4a32ae6ad1"
+        )
+
+        # 模拟解析结果
+        mock_parser.parse_episode_page.return_value = (mock_episode, "https://test-audio-url.m4a")
+
+        downloader = XiaoYuZhouDL(parser=mock_parser)
+
+        request = DownloadRequest(
+            url="https://www.xiaoyuzhoufm.com/episode/6745c73fe0ab7e4a32ae6ad1",
+            url_only=True
+        )
+
+        # 模拟网络会话
+        with patch.object(downloader, '_create_session'), \
+             patch('src.xyz_dl.downloader.parse_episode_from_url', return_value=(mock_episode, "https://test-audio-url.m4a")):
+
+            result = await downloader.download(request)
+
+            # 验证结果
+            assert result.success is True
+            assert result.episode_info is not None
+            assert result.episode_info.audio_url == "https://test-audio-url.m4a"
+            assert result.audio_path is None  # 不应该有文件路径
+            assert result.md_path is None     # 不应该有MD文件路径
+            assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_url_only_mode_without_audio_url(self):
+        """测试url_only模式但无法获取音频URL的情况"""
+        mock_parser = Mock()
+        mock_podcast = PodcastInfo(title="测试播客", author="测试作者")
+        mock_episode = EpisodeInfo(
+            title="测试节目",
+            podcast=mock_podcast,
+            eid="6745c73fe0ab7e4a32ae6ad1"
+        )
+
+        downloader = XiaoYuZhouDL(parser=mock_parser)
+
+        request = DownloadRequest(
+            url="https://www.xiaoyuzhoufm.com/episode/6745c73fe0ab7e4a32ae6ad1",
+            url_only=True
+        )
+
+        # 模拟无音频URL的情况
+        with patch.object(downloader, '_create_session'), \
+             patch('src.xyz_dl.downloader.parse_episode_from_url', return_value=(mock_episode, None)):
+
+            result = await downloader.download(request)
+
+            # 应该返回失败结果
+            assert result.success is False
+            assert "Audio URL not found" in result.error
