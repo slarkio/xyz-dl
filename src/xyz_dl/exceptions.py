@@ -211,6 +211,32 @@ class RateLimitError(XyzDlException):
         return " | ".join(parts)
 
 
+class PathSecurityError(XyzDlException):
+    """路径安全异常 - 路径遍历攻击检测"""
+
+    def __init__(
+        self,
+        message: str,
+        path: Optional[str] = None,
+        attack_type: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(message, context)
+        self.path = path
+        self.attack_type = attack_type
+
+    def __str__(self) -> str:
+        parts = [self.message]
+        if self.attack_type:
+            parts.append(f"Attack Type: {self.attack_type}")
+        if self.path:
+            parts.append(f"Path: {self.path}")
+        if self.context:
+            context_str = ", ".join(f"{k}={v}" for k, v in self.context.items())
+            parts.append(f"Context: {context_str}")
+        return " | ".join(parts)
+
+
 # 异常映射表 - 用于将外部异常转换为内部异常
 EXCEPTION_MAPPING = {
     # HTTP状态码映射

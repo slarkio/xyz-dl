@@ -6,6 +6,8 @@
 import re
 import asyncio
 import aiofiles
+import os
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable, Union, Dict, Any
@@ -38,6 +40,7 @@ from .exceptions import (
     ValidationError,
     NetworkError,
     ParseError,
+    PathSecurityError,
     wrap_exception,
 )
 
@@ -233,6 +236,208 @@ class XiaoYuZhouDL:
 
         return filename.strip()
 
+    def _decode_all_encodings(self, path: str) -> str:
+        """递归解码所有可能的编码格式，防止编码攻击
+
+        Args:
+            path: 待解码的路径字符串
+
+        Returns:
+            完全解码后的路径字符串
+        """
+        prev_path = ""
+        current_path = path
+        max_iterations = 10  # 防止无限循环
+
+        for _ in range(max_iterations):
+            if prev_path == current_path:
+                break
+            prev_path = current_path
+
+            # URL解码
+            current_path = urllib.parse.unquote(current_path)
+
+            # Unicode转义解码
+            try:
+                current_path = current_path.encode().decode('unicode-escape')
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                pass
+
+            # 处理特殊编码模式
+            current_path = current_path.replace('%c0%af', '/')  # 空字节攻击
+            current_path = current_path.replace('%c1%9c', '\\')  # 反斜杠变体
+
+        return current_path
+
+    def _validate_download_path(self, download_dir: str) -> Path:
+        """验证下载路径安全性，防止路径遍历攻击
+
+        Args:
+            download_dir: 用户提供的下载目录路径
+
+        Returns:
+            安全的绝对路径
+
+        Raises:
+            PathSecurityError: 检测到路径遍历攻击或不安全路径
+        """
+        try:
+            # 递归解码所有可能的编码格式
+            decoded_path = self._decode_all_encodings(download_dir)
+
+            # 创建Path对象并解析为绝对路径
+            path = Path(decoded_path).resolve()
+
+            # 检查路径长度限制（Windows 260字符限制）
+            if len(str(path)) > 260:
+                raise PathSecurityError(
+                    "Path too long: exceeds 260 characters limit",
+                    path=str(path),
+                    attack_type="path_length_limit"
+                )
+
+            # 检查是否包含危险的路径遍历模式
+            path_str = str(path).replace("\\", "/")  # 统一使用正斜杠
+            dangerous_patterns = [
+                "../",
+                "..\\",
+                "/..",
+                "\\..",
+                "%2e%2e",  # URL编码的..
+                "%2f",     # URL编码的/
+                "%5c",     # URL编码的\
+            ]
+
+            for pattern in dangerous_patterns:
+                if pattern.lower() in decoded_path.lower():
+                    raise PathSecurityError(
+                        f"Path traversal attack detected: contains '{pattern}'",
+                        path=decoded_path,
+                        attack_type="path_traversal"
+                    )
+
+            # 检查是否为符号链接（Unix系统）
+            if path.is_symlink():
+                # 解析符号链接的真实路径
+                real_path = path.readlink()
+                if self._is_dangerous_system_path(real_path):
+                    raise PathSecurityError(
+                        "Symlink points to dangerous system directory",
+                        path=str(path),
+                        attack_type="symlink_attack"
+                    )
+
+            # 检查是否指向危险的系统目录
+            if self._is_dangerous_system_path(path):
+                raise PathSecurityError(
+                    "Access to system directories not allowed",
+                    path=str(path),
+                    attack_type="system_directory_access"
+                )
+
+            # 对于临时目录特殊处理 - 允许测试环境和系统临时目录
+            temp_paths = [
+                "/tmp",
+                "/var/folders",  # macOS临时目录
+                os.environ.get('TEMP', ''),
+                os.environ.get('TMPDIR', ''),
+            ]
+
+            is_temp_safe = any(
+                temp_path and str(path).startswith(temp_path)
+                for temp_path in temp_paths if temp_path
+            )
+
+            # 确保路径在用户可写区域内（基本安全检查）
+            user_safe_areas = [
+                Path.home(),  # 用户主目录
+                Path.cwd(),   # 当前工作目录
+            ]
+
+            # 检查路径是否在安全区域内或其子目录中
+            is_safe = is_temp_safe  # 临时目录总是安全的
+            for safe_area in user_safe_areas:
+                try:
+                    safe_area_resolved = safe_area.resolve()
+                    if str(path).startswith(str(safe_area_resolved)):
+                        is_safe = True
+                        break
+                except (OSError, RuntimeError):
+                    continue
+
+            # 如果不在安全区域，但是是相对路径转换后的绝对路径，需要额外检查
+            if not is_safe and not Path(download_dir).is_absolute():
+                # 检查解析后的绝对路径是否仍在当前工作目录下
+                current_dir = Path.cwd().resolve()
+                if str(path).startswith(str(current_dir)):
+                    is_safe = True
+                else:
+                    # 相对路径解析到了当前目录之外，仍然不安全
+                    is_safe = False
+
+            if not is_safe:
+                raise PathSecurityError(
+                    "Path outside of allowed safe areas",
+                    path=str(path),
+                    attack_type="unsafe_area_access"
+                )
+
+            return path
+
+        except PathSecurityError:
+            # 重新抛出安全异常
+            raise
+        except (OSError, ValueError, RuntimeError) as e:
+            raise PathSecurityError(
+                f"Invalid path format: {e}",
+                path=download_dir,
+                attack_type="invalid_path"
+            )
+
+    def _is_dangerous_system_path(self, path: Path) -> bool:
+        """检查路径是否指向危险的系统目录
+
+        Args:
+            path: 要检查的路径
+
+        Returns:
+            True表示危险路径，False表示安全路径
+        """
+        path_str = str(path).lower().replace("\\", "/")
+
+        # Unix系统危险目录
+        unix_dangerous = [
+            "/etc",
+            "/bin",
+            "/sbin",
+            "/usr/bin",
+            "/usr/sbin",
+            "/var/log",
+            "/root",
+            "/boot",
+            "/sys",
+            "/proc",
+        ]
+
+        # Windows系统危险目录
+        windows_dangerous = [
+            "c:/windows",
+            "c:/program files",
+            "c:/program files (x86)",
+            "c:/system32",
+            "c:/syswow64",
+            "windows/system32",  # 相对路径形式
+            "/c/windows",        # Unix式Windows路径
+        ]
+
+        dangerous_paths = unix_dangerous + windows_dangerous
+
+        for dangerous in dangerous_paths:
+            if path_str.startswith(dangerous):
+                return True
+
+        return False
+
     def _ask_file_overwrite_confirmation(self, file_path: Path, file_type: str = "文件") -> bool:
         """询问用户是否覆盖已存在的文件
         
@@ -317,7 +522,8 @@ class XiaoYuZhouDL:
         self, audio_url: str, filename: str, download_dir: str
     ) -> str:
         """下载音频文件"""
-        download_path = Path(download_dir)
+        # 验证下载路径安全性
+        download_path = self._validate_download_path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
 
         # 先发送HEAD请求获取content-type以确定正确的文件扩展名
@@ -399,7 +605,8 @@ class XiaoYuZhouDL:
         self, episode_info: EpisodeInfo, filename: str, download_dir: str
     ) -> str:
         """生成Markdown文件"""
-        download_path = Path(download_dir)
+        # 验证下载路径安全性
+        download_path = self._validate_download_path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
 
         md_file_path = download_path / f"{filename}.md"
