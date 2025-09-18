@@ -27,7 +27,7 @@ class EpisodeInfo(BaseModel):
     duration: int = Field(default=0, description="时长(毫秒)")
     pub_date: str = Field(default="", description="发布日期")
     eid: str = Field(default="", description="节目ID")
-    shownotes: str = Field(default="", description="节目介绍")
+    shownotes: Optional[str] = Field(default="", description="节目介绍")
     
     # 新增的元数据字段
     episode_url: str = Field(default="", description="节目完整URL")

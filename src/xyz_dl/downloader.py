@@ -647,16 +647,13 @@ class XiaoYuZhouDL:
         """构建Markdown文件内容"""
         from datetime import datetime
         
-        # 处理show notes
+        # 处理show notes - 使用安全的HTML清理
         show_notes = episode_info.shownotes or "暂无节目介绍"
 
-        # 简单HTML清理
+        # 安全HTML清理并转换为Markdown
         if show_notes != "暂无节目介绍":
-            show_notes = re.sub(r"<p[^>]*>", "\n", show_notes)
-            show_notes = re.sub(r"</p>", "\n", show_notes)
-            show_notes = re.sub(r"<br[^>]*/?>", "\n", show_notes)
-            show_notes = re.sub(r"<[^>]+>", "", show_notes)
-            show_notes = show_notes.strip()
+            from .security import sanitize_show_notes
+            show_notes = sanitize_show_notes(show_notes)
 
         # 构建YAML元数据
         yaml_metadata = f"""---
