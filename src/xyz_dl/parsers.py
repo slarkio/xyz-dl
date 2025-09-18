@@ -6,11 +6,12 @@
 import json
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 from urllib.parse import unquote
 
 import aiohttp
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+from bs4.element import NavigableString
 
 from .exceptions import NetworkError, ParseError, wrap_exception
 from .models import EpisodeInfo, PodcastInfo
@@ -52,7 +53,11 @@ class JsonScriptParser(ParserProtocol):
         json_ld_script = soup.find(
             "script", {"name": "schema:podcast-show", "type": "application/ld+json"}
         )
-        if json_ld_script and json_ld_script.string:
+        if (
+            json_ld_script
+            and hasattr(json_ld_script, "string")
+            and json_ld_script.string
+        ):
             try:
                 json_data = json.loads(json_ld_script.string)
                 episode_info = self._build_episode_info_from_json_ld(json_data, url)
@@ -87,7 +92,7 @@ class JsonScriptParser(ParserProtocol):
         # 回退到原来的window.__INITIAL_STATE__方法
         script_tags = soup.find_all("script")
         for script in script_tags:
-            if not script.string:
+            if not hasattr(script, "string") or not script.string:
                 continue
 
             if "window.__INITIAL_STATE__" in script.string:
@@ -132,7 +137,11 @@ class JsonScriptParser(ParserProtocol):
         json_ld_script = soup.find(
             "script", {"name": "schema:podcast-show", "type": "application/ld+json"}
         )
-        if json_ld_script and json_ld_script.string:
+        if (
+            json_ld_script
+            and hasattr(json_ld_script, "string")
+            and json_ld_script.string
+        ):
             try:
                 json_data = json.loads(json_ld_script.string)
                 # JSON-LD中音频URL在associatedMedia.contentUrl
@@ -140,19 +149,23 @@ class JsonScriptParser(ParserProtocol):
                 if isinstance(associated_media, dict):
                     content_url = associated_media.get("contentUrl")
                     if content_url:
-                        return content_url
+                        return cast(str, content_url)
             except Exception as e:
                 print(f"Failed to extract audio URL from JSON-LD: {e}")
 
         # 尝试从 audio 标签获取
         audio_tag = soup.find("audio")
-        if audio_tag and audio_tag.get("src"):
-            return audio_tag.get("src")
+        if audio_tag and isinstance(audio_tag, Tag) and audio_tag.get("src"):
+            return cast(str, audio_tag.get("src"))
 
         # 从 JSON 数据中提取
         script_tags = soup.find_all("script")
         for script in script_tags:
-            if not script.string or "window.__INITIAL_STATE__" not in script.string:
+            if (
+                not hasattr(script, "string")
+                or not script.string
+                or "window.__INITIAL_STATE__" not in script.string
+            ):
                 continue
 
             try:
@@ -170,7 +183,7 @@ class JsonScriptParser(ParserProtocol):
                     ]
                     for field in audio_fields:
                         if field in episode_data and episode_data[field]:
-                            return episode_data[field]
+                            return cast(str, episode_data[field])
             except Exception:
                 continue
 
@@ -185,7 +198,7 @@ class JsonScriptParser(ParserProtocol):
             raise ParseError("Invalid JSON boundaries in script")
 
         json_str = script_content[json_start:json_end]
-        return json.loads(json_str)
+        return cast(Dict[str, Any], json.loads(json_str))
 
     def _find_episode_data(self, json_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """在JSON数据中查找节目数据"""
@@ -242,22 +255,22 @@ class JsonScriptParser(ParserProtocol):
 
         # 查找Show Notes容器
         show_notes_section = soup.find("section", {"aria-label": "节目show notes"})
-        if not show_notes_section:
+        if not show_notes_section or not isinstance(show_notes_section, Tag):
             return ""
 
         # 查找sn-content div中的article
         sn_content = show_notes_section.find("div", class_="sn-content")
-        if not sn_content:
+        if not sn_content or not isinstance(sn_content, Tag):
             return ""
 
         article = sn_content.find("article")
-        if not article:
+        if not article or not isinstance(article, Tag):
             return ""
 
         # 提取并格式化内容
         return self._format_show_notes_content(article)
 
-    def _format_show_notes_content(self, article) -> str:
+    def _format_show_notes_content(self, article: Tag) -> str:
         """格式化Show Notes内容为Markdown
 
         Args:
@@ -269,6 +282,9 @@ class JsonScriptParser(ParserProtocol):
         markdown_parts = []
 
         for element in article.find_all(["p", "figure", "h1", "h2", "h3"]):
+            if not isinstance(element, Tag):
+                continue
+
             if element.name == "p":
                 # 处理段落
                 text_content = self._extract_paragraph_content(element)
@@ -278,12 +294,12 @@ class JsonScriptParser(ParserProtocol):
             elif element.name == "figure":
                 # 处理图片
                 img = element.find("img")
-                if img and img.get("src"):
-                    img_url = img.get("src")
-                    alt_text = img.get("alt", "图片")
+                if img and isinstance(img, Tag) and img.get("src"):
+                    img_url = cast(str, img.get("src"))
+                    alt_text = cast(str, img.get("alt", "图片"))
                     markdown_parts.append(f"![{alt_text}]({img_url})")
 
-            elif element.name.startswith("h"):
+            elif element.name and element.name.startswith("h"):
                 # 处理标题
                 level = int(element.name[1])
                 text = element.get_text().strip()
@@ -292,7 +308,7 @@ class JsonScriptParser(ParserProtocol):
 
         return "\n\n".join(markdown_parts)
 
-    def _extract_paragraph_content(self, paragraph) -> str:
+    def _extract_paragraph_content(self, paragraph: Tag) -> str:
         """提取段落内容，保留链接和格式
 
         Args:
@@ -304,7 +320,7 @@ class JsonScriptParser(ParserProtocol):
         content_parts = []
 
         for element in paragraph.children:
-            if hasattr(element, "name"):
+            if isinstance(element, Tag):
                 if element.name == "span":
                     # 普通文本
                     text = element.get_text().strip()
@@ -314,9 +330,16 @@ class JsonScriptParser(ParserProtocol):
                 elif element.name == "a":
                     # 链接处理
                     link_text = element.get_text().strip()
-                    link_url = element.get("href") or element.get("data-url", "")
+                    link_url = cast(
+                        str, element.get("href") or element.get("data-url", "")
+                    )
 
-                    if element.get("class") and "timestamp" in element.get("class"):
+                    element_classes = element.get("class")
+                    if (
+                        element_classes
+                        and isinstance(element_classes, list)
+                        and "timestamp" in element_classes
+                    ):
                         # 时间戳链接
                         content_parts.append(f"**{link_text}**")
                     elif link_url and link_text:
@@ -327,9 +350,10 @@ class JsonScriptParser(ParserProtocol):
                         content_parts.append(link_text)
             else:
                 # 纯文本节点
-                text = str(element).strip()
-                if text:
-                    content_parts.append(text)
+                if isinstance(element, (str, NavigableString)):
+                    text = str(element).strip()
+                    if text:
+                        content_parts.append(text)
 
         return "".join(content_parts)
 
@@ -337,13 +361,17 @@ class JsonScriptParser(ParserProtocol):
         """从meta标签中提取封面图片URL"""
         # 尝试从og:image提取
         og_image = soup.find("meta", {"property": "og:image"})
-        if og_image and og_image.get("content"):
-            return og_image.get("content")
+        if og_image and isinstance(og_image, Tag) and og_image.get("content"):
+            return cast(str, og_image.get("content"))
 
         # 尝试从twitter:image提取
         twitter_image = soup.find("meta", {"property": "twitter:image"})
-        if twitter_image and twitter_image.get("content"):
-            return twitter_image.get("content")
+        if (
+            twitter_image
+            and isinstance(twitter_image, Tag)
+            and twitter_image.get("content")
+        ):
+            return cast(str, twitter_image.get("content"))
 
         return ""
 
@@ -446,8 +474,8 @@ class HtmlFallbackParser(ParserProtocol):
 
         # 查找 audio 标签
         audio_tag = soup.find("audio")
-        if audio_tag and audio_tag.get("src"):
-            return audio_tag.get("src")
+        if audio_tag and isinstance(audio_tag, Tag) and audio_tag.get("src"):
+            return cast(str, audio_tag.get("src"))
 
         return None
 
@@ -485,13 +513,13 @@ class HtmlFallbackParser(ParserProtocol):
         """提取节目描述"""
         # 从 meta description 提取
         meta_desc = soup.find("meta", {"name": "description"})
-        if meta_desc:
-            return meta_desc.get("content", "").strip()
+        if meta_desc and isinstance(meta_desc, Tag):
+            return cast(str, meta_desc.get("content", "")).strip()
 
         # 从 og:description 提取
         og_desc = soup.find("meta", {"property": "og:description"})
-        if og_desc:
-            return og_desc.get("content", "").strip()
+        if og_desc and isinstance(og_desc, Tag):
+            return cast(str, og_desc.get("content", "")).strip()
 
         return "暂无节目介绍"
 
@@ -619,9 +647,10 @@ async def parse_episode_from_url(
         raise ParseError(f"Invalid Xiaoyuzhou URL: {url}")
 
     # 获取页面内容
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
-            async with session.get(url, timeout=30) as response:
+            async with session.get(url) as response:
                 if response.status != 200:
                     raise NetworkError(
                         f"HTTP {response.status}: {response.reason}",

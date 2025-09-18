@@ -114,7 +114,7 @@ class SecureFilenameSanitizer(FilenameSanitizer):
         self._compiled_patterns: list[Pattern[str]] = []
         self._setup_platform_rules()
 
-    def _setup_platform_rules(self):
+    def _setup_platform_rules(self) -> None:
         """根据平台设置清理规则 - 预编译正则表达式提升性能"""
         # 基础非法字符 (跨平台) - 使用set提升查找性能
         base_illegal = {'"', "'", "<", ">", ":", "|", "?", "*"}
@@ -286,7 +286,7 @@ class SecureFilenameSanitizer(FilenameSanitizer):
 class LegacyFilenameSanitizer(FilenameSanitizer):
     """传统的文件名清理器 - 向后兼容"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化传统清理器 - 预编译正则表达式"""
         self._illegal_pattern = re.compile(r'[<>:"/\\|?*]')
         self._whitespace_pattern = re.compile(r"\s+")

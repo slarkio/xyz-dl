@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 class ConfigManager:
     """配置管理器"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._config: Optional[Config] = None
 
     def get_config(self) -> Config:

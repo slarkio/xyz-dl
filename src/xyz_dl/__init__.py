@@ -3,6 +3,8 @@
 现代化的异步Python包，支持小宇宙播客的音频和文本下载
 """
 
+from typing import Dict, Optional
+
 from .cli import main
 from .config import get_config
 from .downloader import XiaoYuZhouDL, download_episode, download_episode_sync
@@ -78,7 +80,7 @@ __all__ = [
 class XiaoyuzhouDownloader:
     """向后兼容的下载器类 - 包装新的XiaoYuZhouDL类"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._downloader = None
         import warnings
 
@@ -94,7 +96,7 @@ class XiaoyuzhouDownloader:
 
         return UrlValidator.validate_xiaoyuzhou_url(url)
 
-    def extract_audio_info(self, url: str) -> dict:
+    def extract_audio_info(self, url: str) -> Dict[str, str]:
         """提取音频信息 - 同步版本"""
         result = download_episode_sync(url)
         if result.success and result.episode_info:
@@ -123,7 +125,9 @@ class XiaoyuzhouDownloader:
         else:
             raise Exception(result.error or "Download failed")
 
-    def download(self, url: str, download_dir: str = ".", mode: str = "both") -> dict:
+    def download(
+        self, url: str, download_dir: str = ".", mode: str = "both"
+    ) -> Dict[str, Optional[str]]:
         """主下载方法 - 兼容接口"""
         result = download_episode_sync(url, download_dir, mode)
         if result.success:
@@ -142,7 +146,7 @@ class XiaoyuzhouDownloader:
 __all__.append("XiaoyuzhouDownloader")
 
 
-def print_version_info():
+def print_version_info() -> None:
     """打印版本信息"""
     print(f"{__title__} v{__version__}")
     print(f"{__description__}")

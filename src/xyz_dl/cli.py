@@ -7,7 +7,7 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any, List
 
 from rich import print as rprint
 from rich.console import Console
@@ -16,6 +16,7 @@ from rich.progress import (
     BarColumn,
     Progress,
     SpinnerColumn,
+    TaskID,
     TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
@@ -24,9 +25,10 @@ from rich.table import Table
 from rich.text import Text
 
 from .config import get_config
-from .downloader import DownloadRequest, XiaoYuZhouDL
+from .downloader import XiaoYuZhouDL
+from .models import DownloadRequest
 from .exceptions import XyzDlException
-from .models import Config, DownloadProgress
+from .models import Config, DownloadProgress, DownloadResult
 
 
 class RichProgressHandler:
@@ -34,10 +36,10 @@ class RichProgressHandler:
 
     def __init__(self, console: Console):
         self.console = console
-        self.progress = None
-        self.task_id = None
+        self.progress: Optional[Progress] = None
+        self.task_id: Optional[TaskID] = None
 
-    def start_progress(self, filename: str, total: int = 0):
+    def start_progress(self, filename: str, total: int = 0) -> None:
         """开始进度显示"""
         self.progress = Progress(
             SpinnerColumn(),
@@ -47,23 +49,25 @@ class RichProgressHandler:
             TimeElapsedColumn(),
             console=self.console,
         )
-        self.progress.start()
+        if self.progress is not None:
+            self.progress.start()
 
         description = f"Downloading {filename}"
-        self.task_id = self.progress.add_task(description, total=total)
+        if self.progress is not None:
+            self.task_id = self.progress.add_task(description, total=total)
 
-    def update_progress(self, progress_info: DownloadProgress):
+    def update_progress(self, progress_info: DownloadProgress) -> None:
         """更新进度"""
-        if self.progress and self.task_id is not None:
+        if self.progress is not None and self.task_id is not None:
             self.progress.update(
                 self.task_id,
                 completed=progress_info.downloaded,
                 total=progress_info.total,
             )
 
-    def stop_progress(self):
+    def stop_progress(self) -> None:
         """停止进度显示"""
-        if self.progress:
+        if self.progress is not None:
             self.progress.stop()
             self.progress = None
             self.task_id = None
@@ -72,7 +76,7 @@ class RichProgressHandler:
 class CLIApplication:
     """命令行应用程序"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.console = Console()
         self.progress_handler = RichProgressHandler(self.console)
 
@@ -129,11 +133,11 @@ class CLIApplication:
 
         return parser
 
-    def progress_callback(self, progress: DownloadProgress):
+    def progress_callback(self, progress: DownloadProgress) -> None:
         """进度回调函数"""
         self.progress_handler.update_progress(progress)
 
-    def print_banner(self):
+    def print_banner(self) -> None:
         """打印应用横幅"""
         banner = Text("XYZ-DL", style="bold blue")
         banner.append(" - 小宇宙播客下载器 v2.0.0", style="dim")
@@ -144,7 +148,7 @@ class CLIApplication:
 
         self.console.print(panel)
 
-    def print_episode_info(self, result):
+    def print_episode_info(self, result: DownloadResult) -> None:
         """打印节目信息"""
         if not result.episode_info:
             return
@@ -172,7 +176,7 @@ class CLIApplication:
         self.console.print(table)
         self.console.print()
 
-    def print_success_result(self, result):
+    def print_success_result(self, result: DownloadResult) -> None:
         """打印成功结果"""
         success_text = Text("✅ 下载完成!", style="bold green")
         self.console.print(Panel(success_text, border_style="green"))
@@ -183,7 +187,7 @@ class CLIApplication:
         if result.md_path:
             self.console.print(f"📝 Show Notes: [link]{result.md_path}[/link]")
 
-    def print_url_only_result(self, result):
+    def print_url_only_result(self, result: DownloadResult) -> None:
         """打印URL获取结果"""
         if result.episode_info and result.episode_info.audio_url:
             url_text = Text("🔗 音频下载地址:", style="bold blue")
@@ -196,12 +200,12 @@ class CLIApplication:
         else:
             self.print_error("未能获取到音频下载地址")
 
-    def print_error(self, error: str):
+    def print_error(self, error: str) -> None:
         """打印错误信息"""
         error_text = Text(f"❌ 错误: {error}", style="bold red")
         self.console.print(Panel(error_text, border_style="red"))
 
-    async def run_download(self, args):
+    async def run_download(self, args: argparse.Namespace) -> int:
         """执行下载任务"""
         try:
             # 创建下载请求
@@ -243,7 +247,7 @@ class CLIApplication:
                     else:
                         self.print_success_result(result)
                 else:
-                    self.print_error(result.error)
+                    self.print_error(result.error or "Unknown error")
                     return 1
 
         except XyzDlException as e:
@@ -258,7 +262,7 @@ class CLIApplication:
 
         return 0
 
-    async def main(self, argv=None):
+    async def main(self, argv: Optional[List[str]] = None) -> int:
         """主入口函数"""
         parser = self.create_parser()
         args = parser.parse_args(argv)
@@ -276,7 +280,7 @@ class CLIApplication:
         return await self.run_download(args)
 
 
-def main(argv=None):
+def main(argv: Optional[List[str]] = None) -> int:
     """CLI入口点 - 同步包装器"""
     app = CLIApplication()
 
@@ -290,7 +294,7 @@ def main(argv=None):
         return 1
 
 
-def async_main(argv=None):
+def async_main(argv: Optional[List[str]] = None) -> Any:
     """异步CLI入口点"""
     app = CLIApplication()
     return app.main(argv)

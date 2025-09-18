@@ -10,7 +10,7 @@ import sys
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union, List
 
 import aiofiles
 import aiohttp
@@ -94,23 +94,23 @@ class XiaoYuZhouDL:
         # 文件名清理器
         self._filename_sanitizer = create_filename_sanitizer(secure=secure_filename)
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "XiaoYuZhouDL":
         """异步上下文管理器入口"""
         await self._create_session()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """异步上下文管理器退出"""
         await self._close_session()
 
-    async def _create_session(self):
+    async def _create_session(self) -> None:
         """创建HTTP会话"""
         if self._session is None:
             timeout = aiohttp.ClientTimeout(total=self.config.timeout)
             headers = {"User-Agent": self.config.user_agent}
             self._session = aiohttp.ClientSession(timeout=timeout, headers=headers)
 
-    async def _close_session(self):
+    async def _close_session(self) -> None:
         """关闭HTTP会话"""
         if self._session:
             await self._session.close()
@@ -168,12 +168,24 @@ class XiaoYuZhouDL:
 
                 # 确保将audio_url保存到episode_info中
                 episode_info.audio_url = audio_url
-                return DownloadResult(success=True, episode_info=episode_info)
+                return DownloadResult(
+                    success=True,
+                    episode_info=episode_info,
+                    audio_path=None,
+                    md_path=None,
+                    error=None,
+                )
 
             # 生成文件名
             filename = self._generate_filename(episode_info)
 
-            result = DownloadResult(success=True, episode_info=episode_info)
+            result = DownloadResult(
+                success=True,
+                episode_info=episode_info,
+                audio_path=None,
+                md_path=None,
+                error=None,
+            )
 
             # 根据模式执行下载 - both模式优先下载md
             if request.mode in ["md", "both"]:
@@ -198,6 +210,8 @@ class XiaoYuZhouDL:
                 success=False,
                 error=str(e),
                 episode_info=episode_info if "episode_info" in locals() else None,
+                audio_path=None,
+                md_path=None,
             )
 
     async def _parse_episode(self, url: str) -> tuple[EpisodeInfo, Optional[str]]:
@@ -612,8 +626,9 @@ class XiaoYuZhouDL:
         # 先发送HEAD请求获取content-type以确定正确的文件扩展名
         content_type = None
         try:
-            async with self._session.head(audio_url) as response:
-                content_type = response.headers.get("content-type")
+            if self._session is not None:
+                async with self._session.head(audio_url) as response:
+                    content_type = response.headers.get("content-type")
         except:
             pass  # 如果HEAD请求失败，继续使用URL判断
 
@@ -627,42 +642,45 @@ class XiaoYuZhouDL:
 
         async with self._semaphore:  # 限制并发下载数
             try:
-                async with self._session.get(audio_url) as response:
-                    if response.status != 200:
-                        raise NetworkError(
-                            f"HTTP {response.status}: {response.reason}",
-                            url=audio_url,
-                            status_code=response.status,
-                        )
+                if self._session is not None:
+                    async with self._session.get(audio_url) as response:
+                        if response.status != 200:
+                            raise NetworkError(
+                                f"HTTP {response.status}: {response.reason}",
+                                url=audio_url,
+                                status_code=response.status,
+                            )
 
-                    total_size = int(response.headers.get("content-length", 0))
-                    downloaded = 0
+                        total_size = int(response.headers.get("content-length", 0))
+                        downloaded = 0
 
-                    # 使用rich进度条
-                    with self._create_progress_bar() as progress:
-                        task = progress.add_task(
-                            f"🎵 下载音频: {file_path.name}", total=total_size
-                        )
+                        # 使用rich进度条
+                        with self._create_progress_bar() as progress:
+                            task = progress.add_task(
+                                f"🎵 下载音频: {file_path.name}", total=total_size
+                            )
 
-                        async with aiofiles.open(file_path, "wb") as f:
-                            async for chunk in response.content.iter_chunked(
-                                self.config.chunk_size
-                            ):
-                                await f.write(chunk)
-                                downloaded += len(chunk)
-                                progress.update(task, completed=downloaded)
+                            async with aiofiles.open(file_path, "wb") as f:
+                                async for chunk in response.content.iter_chunked(
+                                    self.config.chunk_size
+                                ):
+                                    await f.write(chunk)
+                                    downloaded += len(chunk)
+                                    progress.update(task, completed=downloaded)
 
-                                # 保持原有的进度回调兼容性
-                                if self.progress_callback:
-                                    progress_info = DownloadProgress(
-                                        filename=file_path.name,
-                                        downloaded=downloaded,
-                                        total=total_size,
-                                    )
-                                    self.progress_callback(progress_info)
+                                    # 保持原有的进度回调兼容性
+                                    if self.progress_callback:
+                                        progress_info = DownloadProgress(
+                                            filename=file_path.name,
+                                            downloaded=downloaded,
+                                            total=total_size,
+                                        )
+                                        self.progress_callback(progress_info)
 
-                    print(f"✅ 音频文件已保存: {file_path.name}")
-                    return str(file_path)
+                        print(f"✅ 音频文件已保存: {file_path.name}")
+                        return str(file_path)
+                else:
+                    raise NetworkError("Session not initialized", url=audio_url)
 
             except aiohttp.ClientError as e:
                 raise DownloadError(
@@ -776,11 +794,13 @@ downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
 
     # 批量下载
     async def download_batch(
-        self, requests: list[Union[DownloadRequest, str]]
-    ) -> list[DownloadResult]:
+        self, requests: List[Union[DownloadRequest, str]]
+    ) -> List[DownloadResult]:
         """批量下载"""
         tasks = [self.download(req) for req in requests]
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Filter out exceptions and return only DownloadResult objects
+        return [r for r in results if isinstance(r, DownloadResult)]
 
     # 便捷方法
     async def download_audio_only(

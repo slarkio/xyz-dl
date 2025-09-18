@@ -38,7 +38,7 @@ class EpisodeInfo(BaseModel):
 
     @field_validator("duration")
     @classmethod
-    def validate_duration(cls, v):
+    def validate_duration(cls, v: int) -> int:
         """验证时长必须非负"""
         if v < 0:
             raise ValueError("Duration must be non-negative")
@@ -94,7 +94,7 @@ class DownloadRequest(BaseModel):
 
     @field_validator("mode")
     @classmethod
-    def validate_mode(cls, v):
+    def validate_mode(cls, v: str) -> str:
         """验证下载模式"""
         valid_modes = ["audio", "md", "both"]
         if v not in valid_modes:
@@ -103,7 +103,7 @@ class DownloadRequest(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def validate_xiaoyuzhou_url(cls, v):
+    def validate_xiaoyuzhou_url(cls, v: Any) -> str:
         """验证并标准化 URL（支持 episode ID 或完整 URL）"""
         from .parsers import UrlValidator
 
@@ -150,11 +150,11 @@ class DownloadProgress(BaseModel):
     def formatted_size(self) -> str:
         """格式化文件大小"""
 
-        def format_bytes(bytes_num: int) -> str:
+        def format_bytes(bytes_num: float) -> str:
             for unit in ["B", "KB", "MB", "GB"]:
                 if bytes_num < 1024.0:
                     return f"{bytes_num:.1f} {unit}"
-                bytes_num /= 1024.0
+                bytes_num = bytes_num / 1024.0
             return f"{bytes_num:.1f} TB"
 
         if self.total > 0:
@@ -193,7 +193,7 @@ class Config(BaseModel):
         "max_concurrent_downloads",
     )
     @classmethod
-    def validate_positive(cls, v):
+    def validate_positive(cls, v: int) -> int:
         """验证必须为正数"""
         if v <= 0:
             raise ValueError("Value must be positive")
