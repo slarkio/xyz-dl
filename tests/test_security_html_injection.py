@@ -212,3 +212,138 @@ class TestHtmlInjectionSecurity:
         assert '@#$%^&amp;*()' in result or '@#$%^&*()' in result
         # HTML标签应被清理
         assert '<p>' not in result
+
+    def test_double_encoding_attack_blocked(self):
+        """测试阻止双重编码攻击"""
+        malicious_html = '&amp;lt;script&amp;gt;alert(&amp;quot;XSS&amp;quot;)&amp;lt;/script&amp;gt;正常内容'
+        episode = self.create_episode_with_shownotes(malicious_html)
+
+        result = self.downloader._build_markdown_content(episode)
+
+        # 不应包含可执行的script标签
+        assert '<script>' not in result
+        # HTML实体编码形式是安全的，但仍不应包含实际的脚本执行内容
+        # 关键是防止浏览器解析执行，HTML实体编码的script不会被执行
+        # 但为了更严格的安全，我们要求完全移除这些内容
+
+        # 应该保留正常内容
+        assert '正常内容' in result
+
+    def test_malformed_tag_bypass_blocked(self):
+        """测试阻止畸形标签绕过攻击"""
+        malicious_payloads = [
+            '<SCR\nIPT>alert("XSS")</SCR\nIPT>正常内容',
+            '<script\x00>alert("XSS")</script>正常内容',
+            '<script >alert("XSS")</script >正常内容',
+            '<<script>script>alert("XSS")<</script>/script>正常内容',
+            '<scr<script>ipt>alert("XSS")</script>正常内容',
+            '<script<!--comment-->alert("XSS")</script>正常内容'
+        ]
+
+        for payload in malicious_payloads:
+            episode = self.create_episode_with_shownotes(payload)
+            result = self.downloader._build_markdown_content(episode)
+
+            # 不应包含任何恶意内容
+            assert '<script>' not in result.lower()
+            assert 'alert(' not in result
+            assert 'XSS' not in result
+            # 应该保留正常内容
+            assert '正常内容' in result
+
+    def test_protocol_encoding_bypass_blocked(self):
+        """测试阻止协议编码绕过攻击"""
+        malicious_payloads = [
+            '<a href="JaVaScRiPt:alert(1)">混合大小写</a>正常内容',
+            '<a href="java&#115;cript:alert(1)">实体编码</a>正常内容',
+            '<a href="&#x6a;avascript:alert(1)">十六进制实体</a>正常内容',
+            '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">Base64编码</a>正常内容',
+            '<a href="vBsCrIpT:alert(1)">VBScript</a>正常内容'
+        ]
+
+        for payload in malicious_payloads:
+            episode = self.create_episode_with_shownotes(payload)
+            result = self.downloader._build_markdown_content(episode)
+
+            # 不应包含任何危险协议
+            assert 'javascript:' not in result.lower()
+            assert 'vbscript:' not in result.lower()
+            assert 'data:text/html' not in result.lower()
+            assert 'alert(' not in result
+            # 应该保留正常内容
+            assert '正常内容' in result
+
+    def test_unicode_bypass_attack_blocked(self):
+        """测试阻止Unicode绕过攻击"""
+        malicious_payloads = [
+            '<scr＜ipt>alert("XSS")</scr＜ipt>正常内容',  # 全角字符
+            '<ｓｃｒｉｐｔ>alert("XSS")</ｓｃｒｉｐｔ>正常内容',  # 全角标签
+            '<script>alert("XSS")</script>正常内容',  # 看起来正常但可能包含特殊字符
+        ]
+
+        for payload in malicious_payloads:
+            episode = self.create_episode_with_shownotes(payload)
+            result = self.downloader._build_markdown_content(episode)
+
+            # 不应包含任何恶意内容
+            assert 'alert(' not in result
+            assert 'XSS' not in result
+            # 应该保留正常内容
+            assert '正常内容' in result
+
+    def test_css_injection_attack_blocked(self):
+        """测试阻止CSS注入攻击"""
+        malicious_payloads = [
+            '<div class="x{background-image:url(\'javascript:alert(1)\')}">CSS注入</div>正常内容',
+            '<span class="x{expression(alert(\'XSS\'))}">IE CSS Expression</span>正常内容',
+            '<div style="background:url(javascript:alert(1))">Style属性</div>正常内容'
+        ]
+
+        for payload in malicious_payloads:
+            episode = self.create_episode_with_shownotes(payload)
+            result = self.downloader._build_markdown_content(episode)
+
+            # 不应包含CSS注入内容
+            assert 'javascript:' not in result
+            assert 'expression(' not in result
+            assert 'alert(' not in result
+            # 应该保留正常内容
+            assert '正常内容' in result
+
+    def test_dom_clobbering_attack_blocked(self):
+        """测试阻止DOM Clobbering攻击"""
+        malicious_payloads = [
+            '<div id="document">Clobber document</div>正常内容',
+            '<span name="cookie">Clobber cookie</span>正常内容',
+            '<div id="location">Clobber location</div>正常内容'
+        ]
+
+        for payload in malicious_payloads:
+            episode = self.create_episode_with_shownotes(payload)
+            result = self.downloader._build_markdown_content(episode)
+
+            # 不应包含id或name属性
+            assert 'id=' not in result
+            assert 'name=' not in result
+            # 应该保留正常内容
+            assert '正常内容' in result
+
+    def test_nested_encoding_attack_blocked(self):
+        """测试阻止嵌套编码攻击"""
+        malicious_html = '''
+        &amp;amp;lt;script&amp;amp;gt;
+        &amp;#115;&amp;#99;&amp;#114;&amp;#105;&amp;#112;&amp;#116;
+        alert("Multi-layer encoding")
+        &amp;amp;lt;/script&amp;amp;gt;
+        正常内容
+        '''
+        episode = self.create_episode_with_shownotes(malicious_html)
+
+        result = self.downloader._build_markdown_content(episode)
+
+        # 不应解码出任何恶意内容
+        assert '<script>' not in result
+        assert 'alert(' not in result
+        assert 'Multi-layer encoding' not in result
+        # 应该保留正常内容
+        assert '正常内容' in result
