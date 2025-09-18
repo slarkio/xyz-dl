@@ -3,7 +3,10 @@
 定义应用专用的异常类，提供清晰的错误处理机制
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional, Callable, TypeVar, cast
+from functools import wraps
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class XyzDlException(Exception):
@@ -252,16 +255,17 @@ EXCEPTION_MAPPING = {
 }
 
 
-def map_http_exception(status_code: int, message: str, **kwargs) -> XyzDlException:
+def map_http_exception(status_code: int, message: str, **kwargs: Any) -> XyzDlException:
     """根据HTTP状态码映射异常"""
     exception_class = EXCEPTION_MAPPING.get(status_code, NetworkError)
-    return exception_class(message, **kwargs)
+    return cast(XyzDlException, exception_class(message, **kwargs))
 
 
-def wrap_exception(func):
+def wrap_exception(func: F) -> F:
     """异常包装装饰器 - 将标准异常转换为应用异常"""
 
-    def wrapper(*args, **kwargs):
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
         except XyzDlException:
@@ -277,4 +281,4 @@ def wrap_exception(func):
             # 其他未知异常
             raise XyzDlException(f"Unexpected error: {e}")
 
-    return wrapper
+    return cast(F, wrapper)
