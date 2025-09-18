@@ -259,7 +259,11 @@ class XiaoYuZhouDL:
 
             # Unicode转义解码
             try:
-                current_path = current_path.encode().decode('unicode-escape')
+                import codecs
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    current_path = codecs.decode(current_path, 'unicode_escape')
             except (UnicodeDecodeError, UnicodeEncodeError):
                 pass
 
