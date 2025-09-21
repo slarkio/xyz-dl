@@ -87,6 +87,26 @@ class MockHTTPSession:
         """清除所有失败设置"""
         self._should_fail.clear()
 
+    def get_sync(self, url: str, timeout: int = None, **kwargs) -> MockResponse:
+        """同步版本的GET请求，用于MockClientSession"""
+        # 检查是否应该抛出异常
+        if url in self._should_fail:
+            raise self._should_fail[url]
+
+        # 查找对应的fixture文件
+        filename = self._url_to_file.get(url)
+        if filename is None:
+            # 未知URL，返回404
+            return MockResponse("Page not found", status=404, reason="Not Found")
+
+        try:
+            # 同步加载HTML内容 - 需要使用同步版本
+            html_content = self.data_manager.load_html_sync(filename)
+            return MockResponse(html_content)
+        except FileNotFoundError:
+            # fixture文件不存在，返回404
+            return MockResponse("Fixture not found", status=404, reason="Not Found")
+
     async def get(self, url: str, timeout: int = None, **kwargs) -> MockResponse:
         """模拟HTTP GET请求
 
@@ -176,12 +196,13 @@ class MockClientSession:
         # 忽略所有参数
         pass
 
-    async def get(self, url: str, **kwargs):
+    def get(self, url: str, **kwargs):
         """模拟GET请求"""
         if self._mock_session is None:
             raise RuntimeError("Mock session not initialized")
 
-        return await self._mock_session.get(url, **kwargs)
+        # 调用同步版本的get方法
+        return self._mock_session.get_sync(url, **kwargs)
 
     async def __aenter__(self):
         return self
@@ -263,10 +284,27 @@ def create_http_error(status: int, message: str = None) -> aiohttp.ClientError:
     if message is None:
         message = f"HTTP {status} error"
 
-    # 模拟不同的HTTP错误
-    if status == 404:
-        return aiohttp.ClientResponseError(None, None, status=status, message=message)
-    elif status >= 500:
-        return aiohttp.ClientResponseError(None, None, status=status, message=message)
-    else:
-        return aiohttp.ClientError(message)
+    # 创建模拟的request_info对象
+    from yarl import URL
+    from aiohttp.client_reqrep import RequestInfo
+
+    try:
+        # 创建基本的RequestInfo对象
+        url = URL("https://example.com")
+        request_info = RequestInfo(
+            url=url,
+            method="GET",
+            headers={},
+            real_url=url
+        )
+
+        # 模拟不同的HTTP错误
+        if status == 404:
+            return aiohttp.ClientResponseError(request_info, (), status=status, message=message)
+        elif status >= 500:
+            return aiohttp.ClientResponseError(request_info, (), status=status, message=message)
+        else:
+            return aiohttp.ClientError(message)
+    except Exception:
+        # 如果RequestInfo创建失败，使用简单的ClientError
+        return aiohttp.ClientError(f"HTTP {status}: {message}")

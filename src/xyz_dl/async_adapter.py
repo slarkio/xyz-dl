@@ -13,7 +13,7 @@ import concurrent.futures
 from typing import Any, Awaitable, Callable, Optional, TypeVar, Union
 import warnings
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class EventLoopState:
@@ -91,7 +91,7 @@ class AsyncAdapter:
                 # 备用方案：使用线程池
                 warnings.warn(
                     "Falling back to thread pool execution due to event loop conflict",
-                    RuntimeWarning
+                    RuntimeWarning,
                 )
                 return self._run_in_thread_pool(coro)
             raise
@@ -100,8 +100,7 @@ class AsyncAdapter:
         """在线程池中运行协程"""
         if self._thread_pool is None:
             self._thread_pool = concurrent.futures.ThreadPoolExecutor(
-                max_workers=1,
-                thread_name_prefix="xyz-dl-async"
+                max_workers=1, thread_name_prefix="xyz-dl-async"
             )
 
         def run_in_thread():
@@ -154,6 +153,7 @@ def async_to_sync(func: Callable[..., Awaitable[T]]) -> Callable[..., T]:
     result = download_episode("https://...")
     ```
     """
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs) -> T:
         coro = func(*args, **kwargs)
@@ -186,7 +186,9 @@ class SyncAsyncBridge:
         return await self.async_func(*args, **kwargs)
 
 
-def create_sync_async_bridge(async_func: Callable[..., Awaitable[T]]) -> SyncAsyncBridge[T]:
+def create_sync_async_bridge(
+    async_func: Callable[..., Awaitable[T]],
+) -> SyncAsyncBridge[T]:
     """创建同步/异步桥接器的便捷函数"""
     return SyncAsyncBridge(async_func)
 
@@ -202,6 +204,7 @@ def try_enable_jupyter_support() -> bool:
     """
     try:
         import nest_asyncio
+
         nest_asyncio.apply()
         return True
     except ImportError:

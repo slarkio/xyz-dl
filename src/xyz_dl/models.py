@@ -186,8 +186,12 @@ class Config(BaseModel):
     max_concurrent_downloads: int = Field(default=3, description="最大并发下载数")
 
     # 交互模式设置
-    non_interactive: bool = Field(default=False, description="非交互模式，不询问用户输入")
-    default_overwrite_behavior: bool = Field(default=False, description="非交互模式下的默认覆盖行为")
+    non_interactive: bool = Field(
+        default=False, description="非交互模式，不询问用户输入"
+    )
+    default_overwrite_behavior: bool = Field(
+        default=False, description="非交互模式下的默认覆盖行为"
+    )
     debug_mode: bool = Field(default=False, description="调试模式，显示详细错误信息")
 
     # HTTP安全配置

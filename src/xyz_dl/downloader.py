@@ -278,8 +278,10 @@ class SecureHTTPSessionManager:
                 # 白名单模式：只允许白名单中的主机
                 if parsed.hostname not in self.config.allowed_redirect_hosts:
                     # 允许同域重定向（但仍需要原始域名也不是私有IP）
-                    if (parsed.hostname != original_parsed.hostname or
-                        self._is_private_ip(original_parsed.hostname)):
+                    if (
+                        parsed.hostname != original_parsed.hostname
+                        or self._is_private_ip(original_parsed.hostname)
+                    ):
                         return False
 
             return True
@@ -581,10 +583,11 @@ class XiaoYuZhouDL:
         except Exception as e:
             # 处理未知异常，记录完整错误信息用于调试
             import traceback
+
             error_details = f"Unexpected error ({type(e).__name__}): {e}"
 
             # 只在调试模式下包含堆栈跟踪
-            if self.config.debug_mode and hasattr(e, '__traceback__'):
+            if self.config.debug_mode and hasattr(e, "__traceback__"):
                 error_details += f"\nTraceback: {traceback.format_exc()}"
 
             return DownloadResult(
@@ -972,16 +975,15 @@ class XiaoYuZhouDL:
                 raise PathSecurityError(
                     f"Dangerous pattern '{pattern}' found in filename",
                     path=filename,
-                    attack_type="path_traversal"
+                    attack_type="path_traversal",
                 )
 
         # 检查是否为绝对路径（Windows和Unix）
-        if (filename.startswith('/') or
-            (len(filename) >= 3 and filename[1:3] == ':\\')):
+        if filename.startswith("/") or (len(filename) >= 3 and filename[1:3] == ":\\"):
             raise PathSecurityError(
                 f"Absolute path not allowed in filename",
                 path=filename,
-                attack_type="path_traversal"
+                attack_type="path_traversal",
             )
 
         # 使用Path.name确保只有文件名部分，去除任何路径成分
@@ -991,7 +993,7 @@ class XiaoYuZhouDL:
             raise PathSecurityError(
                 f"Invalid filename: {filename}",
                 path=filename,
-                attack_type="invalid_filename"
+                attack_type="invalid_filename",
             ) from e
 
         # 检查文件名中是否包含其他危险字符
@@ -1001,15 +1003,19 @@ class XiaoYuZhouDL:
                 raise PathSecurityError(
                     f"Dangerous character '{char}' found in filename",
                     path=filename,
-                    attack_type="path_traversal"
+                    attack_type="path_traversal",
                 )
 
         # 检查是否为空或只包含点号和空格
-        if not safe_filename or safe_filename.strip() == "" or safe_filename in [".", ".."]:
+        if (
+            not safe_filename
+            or safe_filename.strip() == ""
+            or safe_filename in [".", ".."]
+        ):
             raise PathSecurityError(
                 "Empty or invalid filename",
                 path=filename,
-                attack_type="invalid_filename"
+                attack_type="invalid_filename",
             )
 
         # 限制文件名长度，保留扩展名
@@ -1140,7 +1146,7 @@ class XiaoYuZhouDL:
             raise PathSecurityError(
                 "File path escapes download directory",
                 path=str(resolved_file_path),
-                attack_type="path_traversal"
+                attack_type="path_traversal",
             )
 
         return download_path, file_path, progress_path
@@ -1245,8 +1251,8 @@ class XiaoYuZhouDL:
             下载后的文件路径
         """
         # 准备下载文件路径
-        download_path, file_path, progress_path = await self._prepare_download_file_path(
-            audio_url, filename, download_dir
+        download_path, file_path, progress_path = (
+            await self._prepare_download_file_path(audio_url, filename, download_dir)
         )
 
         # 检查文件是否已存在
@@ -1374,7 +1380,9 @@ class XiaoYuZhouDL:
         try:
             headers = create_range_headers(resume_pos)
             if self._session is not None:
-                response = await self._session_manager.safe_request("GET", audio_url, headers=headers)
+                response = await self._session_manager.safe_request(
+                    "GET", audio_url, headers=headers
+                )
                 async with response:
                     if response.status not in [206, 200]:  # Partial Content or OK
                         return False
@@ -1444,7 +1452,7 @@ class XiaoYuZhouDL:
             raise PathSecurityError(
                 "File path escapes download directory",
                 path=str(resolved_file_path),
-                attack_type="path_traversal"
+                attack_type="path_traversal",
             )
 
         # 检查文件是否已存在 - 使用统一的检查逻辑
@@ -1477,6 +1485,7 @@ class XiaoYuZhouDL:
         # 安全HTML清理并转换为Markdown
         if show_notes != DEFAULT_SHOW_NOTES:
             from .security import sanitize_show_notes
+
             show_notes = sanitize_show_notes(show_notes)
 
         # 构建YAML元数据

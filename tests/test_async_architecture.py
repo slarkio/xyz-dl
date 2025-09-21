@@ -123,8 +123,9 @@ class TestExceptionHandling:
         """
         downloader = XiaoYuZhouDL()
 
-        # 注入一个会导致具体错误的URL
-        request = DownloadRequest(url="https://invalid-domain-xyz.com/episode/123")
+        # 使用一个格式正确但不存在的episode ID，这样可以通过Pydantic验证
+        # 但会在解析阶段失败，测试异常处理逻辑
+        request = DownloadRequest(url="https://www.xiaoyuzhoufm.com/episode/invalid123abc")
 
         async with downloader:
             result = await downloader.download(request)
@@ -133,9 +134,13 @@ class TestExceptionHandling:
         assert not result.success
         assert result.error is not None
 
-        # BUG：当前实现会丢失原始异常的具体信息
-        # 期望得到更具体的网络错误，而不是通用的字符串
-        assert "Failed to parse episode" in result.error  # 当前的宽泛错误
+        # 验证错误信息是否具体且有用
+        # 期望得到具体的异常类型和详细信息，而不是通用的字符串
+        assert "ParseError" in result.error or "NetworkError" in result.error
+        assert "URL:" in result.error  # 应该包含具体的URL信息
+        # 确保不是过于宽泛的错误信息
+        assert result.error != "An error occurred"
+        assert result.error != "Failed to download"
 
 
 class TestResourceManagement:
