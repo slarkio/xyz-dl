@@ -28,7 +28,7 @@ class HtmlSanitizer:
     # 允许的协议白名单
     ALLOWED_PROTOCOLS: List[str] = ['http', 'https', 'mailto']
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化HTML清理器"""
         self._configure_bleach()
 
