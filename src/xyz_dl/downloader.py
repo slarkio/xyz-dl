@@ -257,16 +257,22 @@ class SecureHTTPSessionManager:
             if parsed.scheme not in ["http", "https"]:
                 return False
 
-            # 检查主机名是否在白名单中
-            if self.config.allowed_redirect_hosts:
-                if parsed.hostname not in self.config.allowed_redirect_hosts:
-                    # 允许同域重定向
-                    if parsed.hostname != original_parsed.hostname:
-                        return False
+            # 检查主机名是否存在 - 防止None hostname绕过
+            if not parsed.hostname:
+                return False
 
-            # 检查是否指向内部IP地址（防止SSRF）
+            # 检查是否指向内部IP地址（防止SSRF） - 优先检查
             if self._is_private_ip(parsed.hostname):
                 return False
+
+            # 检查主机名是否在白名单中
+            if self.config.allowed_redirect_hosts:
+                # 白名单模式：只允许白名单中的主机
+                if parsed.hostname not in self.config.allowed_redirect_hosts:
+                    # 允许同域重定向（但仍需要原始域名也不是私有IP）
+                    if (parsed.hostname != original_parsed.hostname or
+                        self._is_private_ip(original_parsed.hostname)):
+                        return False
 
             return True
 
@@ -929,6 +935,85 @@ class XiaoYuZhouDL:
         safe_name = self._sanitize_filename(base_name)
         return safe_name + extension
 
+    def _ensure_safe_filename(self, filename: str) -> str:
+        """确保文件名绝对安全，防止路径遍历攻击
+
+        Args:
+            filename: 待验证的文件名
+
+        Returns:
+            安全的文件名
+
+        Raises:
+            PathSecurityError: 检测到不安全的文件名
+        """
+        # 先检查原始filename是否包含路径分隔符 - 防止路径遍历
+        dangerous_patterns = ["..", "/", "\\"]
+        for pattern in dangerous_patterns:
+            if pattern in filename:
+                raise PathSecurityError(
+                    f"Dangerous pattern '{pattern}' found in filename",
+                    path=filename,
+                    attack_type="path_traversal"
+                )
+
+        # 检查是否为绝对路径（Windows和Unix）
+        if (filename.startswith('/') or
+            (len(filename) >= 3 and filename[1:3] == ':\\')):
+            raise PathSecurityError(
+                f"Absolute path not allowed in filename",
+                path=filename,
+                attack_type="path_traversal"
+            )
+
+        # 使用Path.name确保只有文件名部分，去除任何路径成分
+        try:
+            safe_filename = Path(filename).name
+        except (OSError, ValueError) as e:
+            raise PathSecurityError(
+                f"Invalid filename: {filename}",
+                path=filename,
+                attack_type="invalid_filename"
+            ) from e
+
+        # 检查文件名中是否包含其他危险字符
+        other_dangerous_chars = [":", "*", "?", "<", ">", "|"]
+        for char in other_dangerous_chars:
+            if char in safe_filename:
+                raise PathSecurityError(
+                    f"Dangerous character '{char}' found in filename",
+                    path=filename,
+                    attack_type="path_traversal"
+                )
+
+        # 检查是否为空或只包含点号和空格
+        if not safe_filename or safe_filename.strip() == "" or safe_filename in [".", ".."]:
+            raise PathSecurityError(
+                "Empty or invalid filename",
+                path=filename,
+                attack_type="invalid_filename"
+            )
+
+        # 限制文件名长度，保留扩展名
+        if len(safe_filename) > 255:
+            # 尝试保留扩展名
+            path_obj = Path(safe_filename)
+            extension = path_obj.suffix
+            name_without_ext = path_obj.stem
+
+            if extension:
+                # 计算可用于名称的长度
+                available_length = 255 - len(extension)
+                if available_length > 0:
+                    safe_filename = name_without_ext[:available_length] + extension
+                else:
+                    # 扩展名太长，只截断整个文件名
+                    safe_filename = safe_filename[:255]
+            else:
+                safe_filename = safe_filename[:255]
+
+        return safe_filename
+
     def _check_file_exists_and_handle(self, file_path: Path, file_type: str) -> bool:
         """检查文件是否存在并处理用户选择
 
@@ -1023,7 +1108,21 @@ class XiaoYuZhouDL:
         # 检测文件类型并确定扩展名
         content_type = await self._detect_audio_content_type(audio_url)
         extension = self._get_audio_extension(audio_url, content_type)
-        file_path = download_path / f"{filename}{extension}"
+
+        # 确保文件名安全，防止路径遍历攻击
+        safe_filename = self._ensure_safe_filename(f"{filename}{extension}")
+        file_path = download_path / safe_filename
+
+        # 最终验证路径在下载目录内
+        resolved_file_path = file_path.resolve()
+        resolved_download_path = download_path.resolve()
+
+        if not str(resolved_file_path).startswith(str(resolved_download_path)):
+            raise PathSecurityError(
+                "File path escapes download directory",
+                path=str(resolved_file_path),
+                attack_type="path_traversal"
+            )
 
         return download_path, str(file_path)
 
@@ -1183,7 +1282,20 @@ class XiaoYuZhouDL:
         download_path = self._validate_download_path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
 
-        md_file_path = download_path / f"{filename}.md"
+        # 确保文件名安全
+        safe_filename = self._ensure_safe_filename(f"{filename}.md")
+        md_file_path = download_path / safe_filename
+
+        # 最终验证路径在下载目录内
+        resolved_file_path = md_file_path.resolve()
+        resolved_download_path = download_path.resolve()
+
+        if not str(resolved_file_path).startswith(str(resolved_download_path)):
+            raise PathSecurityError(
+                "File path escapes download directory",
+                path=str(resolved_file_path),
+                attack_type="path_traversal"
+            )
 
         # 检查文件是否已存在 - 使用统一的检查逻辑
         if not self._check_file_exists_and_handle(md_file_path, "Markdown文件"):

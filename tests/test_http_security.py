@@ -341,6 +341,55 @@ class TestConfigValidation:
         assert "Connection" in headers
         assert headers["DNT"] == "1"
 
+    def test_redirect_validation_null_hostname(self):
+        """测试NULL hostname重定向验证漏洞修复"""
+        config = Config()
+        session_manager = SecureHTTPSessionManager(config)
+
+        # 测试各种可能导致NULL hostname的URL
+        test_cases = [
+            "file:///etc/passwd",
+            "data:text/plain,malicious",
+            "javascript:alert('xss')",
+            "ftp://example.com/file",
+            "://malformed-url",
+            "http://@localhost/test",
+        ]
+
+        for malicious_url in test_cases:
+            result = session_manager._validate_redirect_url(
+                malicious_url, "https://www.xiaoyuzhoufm.com/episode/123"
+            )
+            assert not result, f"Should reject URL with no/invalid hostname: {malicious_url}"
+
+    def test_redirect_validation_private_ip_priority(self):
+        """测试私有IP检查优先级"""
+        config = Config(allowed_redirect_hosts=["192.168.1.1"])  # 私有IP在白名单中
+        session_manager = SecureHTTPSessionManager(config)
+
+        # 即使私有IP在白名单中，也应该被拒绝
+        result = session_manager._validate_redirect_url(
+            "http://192.168.1.1/attack", "https://www.xiaoyuzhoufm.com/episode/123"
+        )
+        assert not result, "Private IP should be rejected even if in whitelist"
+
+    def test_redirect_validation_original_hostname_check(self):
+        """测试重定向安全检查严格性"""
+        config = Config(allowed_redirect_hosts=["example.com"])
+        session_manager = SecureHTTPSessionManager(config)
+
+        # 测试重定向到私有IP应该被拒绝（更重要的安全检查）
+        result = session_manager._validate_redirect_url(
+            "http://192.168.1.1/malicious", "https://www.xiaoyuzhoufm.com/episode/123"
+        )
+        assert not result, "Should reject redirect to private IP"
+
+        # 测试重定向到非白名单域名应该被拒绝
+        result = session_manager._validate_redirect_url(
+            "https://malicious.com/redirect", "https://www.xiaoyuzhoufm.com/episode/123"
+        )
+        assert not result, "Should reject redirect to non-whitelisted host"
+
 
 class TestSSLConfiguration:
     """测试SSL配置"""
