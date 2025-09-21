@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     xyz_dl_default_overwrite_behavior: bool = False
     xyz_dl_debug_mode: bool = False
 
+    # HTTP安全配置
+    xyz_dl_ssl_verify: bool = True
+    xyz_dl_max_redirects: int = 3
+    xyz_dl_max_request_size: int = 100 * 1024 * 1024  # 100MB
+    xyz_dl_max_response_size: int = 500 * 1024 * 1024  # 500MB
+
+    # 连接池配置
+    xyz_dl_connection_pool_size: int = 10
+    xyz_dl_connection_timeout: float = 10.0
+    xyz_dl_read_timeout: float = 30.0
+
     def to_config(self) -> Config:
         """转换为 Config 模型"""
         return Config(
@@ -50,6 +61,13 @@ class Settings(BaseSettings):
             non_interactive=self.xyz_dl_non_interactive,
             default_overwrite_behavior=self.xyz_dl_default_overwrite_behavior,
             debug_mode=self.xyz_dl_debug_mode,
+            ssl_verify=self.xyz_dl_ssl_verify,
+            max_redirects=self.xyz_dl_max_redirects,
+            max_request_size=self.xyz_dl_max_request_size,
+            max_response_size=self.xyz_dl_max_response_size,
+            connection_pool_size=self.xyz_dl_connection_pool_size,
+            connection_timeout=self.xyz_dl_connection_timeout,
+            read_timeout=self.xyz_dl_read_timeout,
         )
 
     model_config = SettingsConfigDict(
