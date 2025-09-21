@@ -319,7 +319,7 @@ class TestModuleIntegration:
             # 测试组件协作
             request = DownloadRequest(
                 url="https://www.xiaoyuzhoufm.com/episode/test",
-                mode="url_only"  # 只验证URL，不实际下载
+                mode="md"  # 只下载md文件，不下载音频
             )
 
             # 这应该能够通过各个模块的协作完成

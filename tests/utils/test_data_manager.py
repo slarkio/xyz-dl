@@ -77,6 +77,26 @@ class TestDataManager:
         print(f"HTML内容已保存: {file_path}")
         return str(file_path)
 
+    def load_html_sync(self, filename: str) -> str:
+        """从本地文件同步加载HTML内容（用于Mock）
+
+        Args:
+            filename: 文件名
+
+        Returns:
+            HTML内容
+
+        Raises:
+            FileNotFoundError: 文件不存在
+        """
+        file_path = self.fixtures_dir / filename
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"测试数据文件不存在: {file_path}")
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+
     async def load_html(self, filename: str) -> str:
         """从本地文件加载HTML内容
 

@@ -8,7 +8,7 @@ from typing import Optional
 
 from ..parsers import UrlValidator
 from ..config import Config
-from ..exceptions import ValidationError
+from ..exceptions import ValidationError, ParseError
 from .file_manager import FileManager
 
 
@@ -43,11 +43,34 @@ class ValidationManager:
         Raises:
             ValidationError: URL无效时
         """
+        # 首先做基本的URL格式检查
+        url = url.strip()
+        if not url:
+            raise ValidationError("Empty URL")
+
+        # 检查是否包含明显的非法字符
+        import re
+        if re.search(r'[<>"|\\]', url):
+            raise ValidationError(f"Invalid characters in URL: {url}")
+
+        # 对于明显不是URL或episode ID的输入，直接拒绝
+        # Episode ID应该是纯字母数字组合，不应该包含连字符或多个单词
+        if not url.startswith("http"):
+            # 检查是否为有效的episode ID格式
+            if not re.match(r'^[a-zA-Z0-9]{6,24}$', url):
+                raise ValidationError(f"Invalid URL format: {url}")
+
         try:
             # 使用现有的URL验证器
             normalized_url = self.url_validator.normalize_to_url(url)
+            if not normalized_url:  # 额外检查确保返回了有效URL
+                raise ValidationError(f"Invalid URL: {url}")
             return True
+        except (ParseError, ValidationError):
+            # 重新抛出为ValidationError以保持一致性
+            raise ValidationError(f"Invalid URL: {url}")
         except Exception as e:
+            # 其他异常也转换为ValidationError
             raise ValidationError(f"Invalid URL: {e}")
 
     async def validate_path(self, path: str) -> bool:
