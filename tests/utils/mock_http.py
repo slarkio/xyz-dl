@@ -5,14 +5,14 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Dict, Optional, Union, Any
 from unittest.mock import AsyncMock, Mock
 from urllib.parse import urlparse
 
 import aiohttp
 import pytest
 
-from .test_data_manager import DEFAULT_TEST_URLS, TestDataManager
+from .test_data_manager import TestDataManager, DEFAULT_TEST_URLS
 
 
 class MockResponse:
@@ -167,19 +167,6 @@ class HTTPMocker:
             self.mock_session.clear_failures()
 
 
-class MockContextManager:
-    """Mock响应的上下文管理器"""
-
-    def __init__(self, response: MockResponse):
-        self.response = response
-
-    async def __aenter__(self):
-        return self.response
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-
 class MockClientSession:
     """模拟的ClientSession类"""
 
@@ -189,30 +176,15 @@ class MockClientSession:
         # 忽略所有参数
         pass
 
-    def get(self, url: str, **kwargs):
+    async def get(self, url: str, **kwargs):
         """模拟GET请求"""
         if self._mock_session is None:
             raise RuntimeError("Mock session not initialized")
 
-        return MockAsyncContextManager(self._mock_session, url, **kwargs)
+        return await self._mock_session.get(url, **kwargs)
 
     async def __aenter__(self):
         return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-
-class MockAsyncContextManager:
-    """异步上下文管理器，用于模拟session.get()"""
-
-    def __init__(self, mock_session: MockHTTPSession, url: str, **kwargs):
-        self.mock_session = mock_session
-        self.url = url
-        self.kwargs = kwargs
-
-    async def __aenter__(self):
-        return await self.mock_session.get(self.url, **self.kwargs)
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
@@ -291,23 +263,10 @@ def create_http_error(status: int, message: str = None) -> aiohttp.ClientError:
     if message is None:
         message = f"HTTP {status} error"
 
-    # 创建一个简单的Request Info对象mock
-    from unittest.mock import Mock
-
-    request_info = Mock()
-    request_info.real_url = "http://test.example.com"
-    request_info.method = "GET"
-
-    history = ()
-
     # 模拟不同的HTTP错误
     if status == 404:
-        return aiohttp.ClientResponseError(
-            request_info, history, status=status, message=message
-        )
+        return aiohttp.ClientResponseError(None, None, status=status, message=message)
     elif status >= 500:
-        return aiohttp.ClientResponseError(
-            request_info, history, status=status, message=message
-        )
+        return aiohttp.ClientResponseError(None, None, status=status, message=message)
     else:
         return aiohttp.ClientError(message)

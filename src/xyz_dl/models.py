@@ -190,18 +190,80 @@ class Config(BaseModel):
     default_overwrite_behavior: bool = Field(default=False, description="非交互模式下的默认覆盖行为")
     debug_mode: bool = Field(default=False, description="调试模式，显示详细错误信息")
 
+    # HTTP安全配置
+    ssl_verify: bool = Field(default=True, description="启用SSL证书验证")
+    max_redirects: int = Field(default=3, description="最大重定向次数")
+    max_request_size: int = Field(
+        default=100 * 1024 * 1024, description="最大请求大小(100MB)"
+    )
+    max_response_size: int = Field(
+        default=500 * 1024 * 1024, description="最大响应大小(500MB)"
+    )
+
+    # 连接池配置
+    connection_pool_size: int = Field(default=10, description="连接池大小")
+    connections_per_host: int = Field(default=5, description="每个主机的连接数限制")
+    connection_timeout: float = Field(default=10.0, description="连接超时时间(秒)")
+    read_timeout: float = Field(default=30.0, description="读取超时时间(秒)")
+    dns_cache_ttl: int = Field(default=300, description="DNS缓存TTL(秒)")
+
+    # 重定向安全配置
+    allowed_redirect_hosts: Optional[list[str]] = Field(
+        default_factory=lambda: [
+            "m.xiaoyuzhoufm.com",
+            "media.xiaoyuzhoufm.com",
+            "cdn.xiaoyuzhoufm.com",
+        ],
+        description="允许重定向的主机白名单",
+    )
+
+    # 安全头配置
+    security_headers: Dict[str, str] = Field(
+        default_factory=lambda: {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3",
+            "Accept-Encoding": "gzip, deflate",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+        },
+        description="安全HTTP头配置",
+    )
+
     @field_validator(
         "timeout",
         "max_retries",
         "chunk_size",
         "max_filename_length",
         "max_concurrent_downloads",
+        "max_redirects",
+        "max_request_size",
+        "max_response_size",
+        "connection_pool_size",
+        "connections_per_host",
+        "dns_cache_ttl",
     )
     @classmethod
     def validate_positive(cls, v: int) -> int:
         """验证必须为正数"""
         if v <= 0:
             raise ValueError("Value must be positive")
+        return v
+
+    @field_validator("connection_timeout", "read_timeout")
+    @classmethod
+    def validate_positive_float(cls, v: float) -> float:
+        """验证浮点数必须为正数"""
+        if v <= 0:
+            raise ValueError("Timeout value must be positive")
+        return v
+
+    @field_validator("max_redirects")
+    @classmethod
+    def validate_redirect_limit(cls, v: int) -> int:
+        """验证重定向次数限制"""
+        if v > 10:
+            raise ValueError("max_redirects should not exceed 10 for security")
         return v
 
     model_config = ConfigDict(extra="allow")  # 允许额外配置项

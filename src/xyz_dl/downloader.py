@@ -4,9 +4,10 @@
 """
 
 import asyncio
+import ipaddress
 import os
 import re
-import sys
+import ssl
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
@@ -17,10 +18,8 @@ import aiohttp
 from rich.progress import (
     BarColumn,
     DownloadColumn,
-    FileSizeColumn,
     Progress,
     SpinnerColumn,
-    TaskID,
     TextColumn,
     TimeRemainingColumn,
     TransferSpeedColumn,
@@ -32,7 +31,29 @@ MAX_DECODE_ITERATIONS = 10  # Unicode解码最大迭代次数
 DEFAULT_UNKNOWN_PODCAST = "未知播客"
 DEFAULT_UNKNOWN_AUTHOR = "未知作者"
 DEFAULT_SHOW_NOTES = "暂无节目介绍"
-TEMP_DIRS = ["/tmp", "/var/folders"]  # 安全的临时目录前缀
+TEMP_DIRS = [
+    "/tmp",
+    "/var/folders",
+    "/private/var/folders",
+    "/private/tmp",
+]  # 安全的临时目录前缀
+
+# HTTP安全常量
+HTTP_RESPONSE_SIZE_LIMIT = 500 * 1024 * 1024  # 500MB
+HTTP_CHUNK_SIZE_DEFAULT = 8192
+HTTP_TIMEOUT_DEFAULT = 30
+HTTP_REDIRECT_LIMIT = 3
+
+# 安全的内部IP范围 (RFC 1918)
+PRIVATE_IP_RANGES = [
+    "127.0.0.0/8",  # 本地回环
+    "10.0.0.0/8",  # 私有网络 A类
+    "172.16.0.0/12",  # 私有网络 B类
+    "192.168.0.0/16",  # 私有网络 C类
+    "169.254.0.0/16",  # 链路本地
+    "224.0.0.0/4",  # 多播
+    "240.0.0.0/4",  # 实验性
+]
 
 from .async_adapter import smart_run
 from .config import get_config
@@ -64,6 +85,331 @@ from .retry import (
 )
 
 
+def _sanitize_url_for_logging(url: str) -> str:
+    """清理URL中的敏感信息用于日志记录
+
+    Args:
+        url: 原始URL
+
+    Returns:
+        清理后的URL，隐藏查询参数和敏感信息
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+        # 保留基本信息，隐藏查询参数
+        sanitized = f"{parsed.scheme}://{parsed.hostname}{parsed.path}"
+        return sanitized
+    except Exception:
+        # 如果解析失败，返回一个通用标识
+        return "[URL]"
+
+
+def _sanitize_error_message(message: str, url: Optional[str] = None) -> str:
+    """清理错误消息中的敏感信息
+
+    Args:
+        message: 原始错误消息
+        url: 相关的URL（可选）
+
+    Returns:
+        清理后的错误消息
+    """
+    # 替换可能的敏感信息模式
+    sensitive_patterns = [
+        (r"token=[^&\s]+", "token=***"),
+        (r"key=[^&\s]+", "key=***"),
+        (r"password=[^&\s]+", "password=***"),
+        (r"auth=[^&\s]+", "auth=***"),
+        (r"api_key=[^&\s]+", "api_key=***"),
+    ]
+
+    sanitized = message
+    for pattern, replacement in sensitive_patterns:
+        sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
+
+    # 如果提供了URL，替换为清理后的版本
+    if url:
+        sanitized_url = _sanitize_url_for_logging(url)
+        sanitized = sanitized.replace(url, sanitized_url)
+
+    return sanitized
+
+
+class SecureHTTPSessionManager:
+    """安全HTTP会话管理器
+
+    负责创建和配置安全的HTTP会话，包括SSL验证、重定向限制、
+    大小限制、连接池配置等安全功能
+    """
+
+    def __init__(self, config: Config):
+        self.config = config
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def create_session(self) -> aiohttp.ClientSession:
+        """创建安全配置的HTTP会话"""
+        if self._session is not None:
+            return self._session
+
+        # 配置SSL上下文
+        ssl_context = self._create_ssl_context()
+
+        # 配置连接器
+        connector = self._create_connector(ssl_context)
+
+        # 配置超时
+        timeout = self._create_timeout_config()
+
+        # 配置安全头
+        headers = self._create_secure_headers()
+
+        # 创建会话
+        self._session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers=headers,
+            auto_decompress=True,  # 自动解压缩
+            raise_for_status=False,  # 手动处理状态码
+        )
+
+        return self._session
+
+    def _create_ssl_context(self) -> Union[ssl.SSLContext, bool]:
+        """创建SSL上下文配置
+
+        Returns:
+            ssl.SSLContext: 安全的SSL上下文（当ssl_verify=True时）
+            False: 禁用SSL验证（仅用于测试环境，生产环境不推荐）
+        """
+        if not self.config.ssl_verify:
+            # 警告：生产环境不应禁用SSL验证
+            import warnings
+
+            warnings.warn(
+                "SSL verification is disabled. This is not recommended for production use.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return False
+
+        # 创建安全的SSL上下文
+        ssl_context = ssl.create_default_context()
+
+        # 强制使用强加密算法
+        ssl_context.set_ciphers(
+            "ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:" "!aNULL:!MD5:!DSS"
+        )
+
+        # 设置最低TLS版本
+        ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+
+        # 启用证书验证
+        ssl_context.check_hostname = True
+        ssl_context.verify_mode = ssl.CERT_REQUIRED
+
+        return ssl_context
+
+    def _create_connector(
+        self, ssl_context: Union[ssl.SSLContext, bool]
+    ) -> aiohttp.TCPConnector:
+        """创建TCP连接器"""
+        return aiohttp.TCPConnector(
+            ssl=ssl_context,
+            limit=self.config.connection_pool_size,
+            limit_per_host=self.config.connections_per_host,
+            ttl_dns_cache=self.config.dns_cache_ttl,
+            use_dns_cache=True,
+            enable_cleanup_closed=True,
+        )
+
+    def _create_timeout_config(self) -> aiohttp.ClientTimeout:
+        """创建超时配置"""
+        return aiohttp.ClientTimeout(
+            total=self.config.timeout,  # 总超时时间
+            connect=self.config.connection_timeout,  # 连接超时
+            sock_read=self.config.read_timeout,  # 读取超时
+            sock_connect=self.config.connection_timeout,  # Socket连接超时
+        )
+
+    def _create_secure_headers(self) -> Dict[str, str]:
+        """创建安全的HTTP头"""
+        headers = {"User-Agent": self.config.user_agent, **self.config.security_headers}
+
+        # 移除可能暴露信息的头
+        headers.pop("Server", None)
+        headers.pop("X-Powered-By", None)
+
+        return headers
+
+    async def close_session(self) -> None:
+        """关闭HTTP会话"""
+        if self._session:
+            await self._session.close()
+            self._session = None
+
+    def _validate_redirect_url(self, url: str, original_url: str) -> bool:
+        """验证重定向URL的安全性，防止SSRF攻击
+
+        Args:
+            url: 重定向目标URL
+            original_url: 原始URL
+
+        Returns:
+            True 表示安全，False 表示不安全
+        """
+        try:
+            parsed = urllib.parse.urlparse(url)
+            original_parsed = urllib.parse.urlparse(original_url)
+
+            # 检查协议是否安全
+            if parsed.scheme not in ["http", "https"]:
+                return False
+
+            # 检查主机名是否存在 - 防止None hostname绕过
+            if not parsed.hostname:
+                return False
+
+            # 检查是否指向内部IP地址（防止SSRF） - 优先检查
+            if self._is_private_ip(parsed.hostname):
+                return False
+
+            # 检查主机名是否在白名单中
+            if self.config.allowed_redirect_hosts:
+                # 白名单模式：只允许白名单中的主机
+                if parsed.hostname not in self.config.allowed_redirect_hosts:
+                    # 允许同域重定向（但仍需要原始域名也不是私有IP）
+                    if (parsed.hostname != original_parsed.hostname or
+                        self._is_private_ip(original_parsed.hostname)):
+                        return False
+
+            return True
+
+        except Exception:
+            # 解析失败，认为不安全
+            return False
+
+    def _is_private_ip(self, hostname: Optional[str]) -> bool:
+        """检查主机名是否为私有IP地址
+
+        Args:
+            hostname: 主机名或IP地址
+
+        Returns:
+            True 表示是私有IP，False 表示公网IP
+        """
+        if not hostname:
+            return True  # 空主机名认为不安全
+
+        try:
+            ip = ipaddress.ip_address(hostname)
+
+            # 检查是否为私有地址
+            if ip.is_private or ip.is_loopback or ip.is_link_local:
+                return True
+
+            # 检查是否在私有网段内
+            for private_range in PRIVATE_IP_RANGES:
+                if ip in ipaddress.ip_network(private_range):
+                    return True
+
+            return False
+
+        except ValueError:
+            # 不是IP地址，认为是域名，返回False
+            return False
+
+    async def safe_request(
+        self, method: str, url: str, **kwargs: Any
+    ) -> aiohttp.ClientResponse:
+        """执行安全的HTTP请求，包含大小限制和重定向控制"""
+        session = await self.create_session()
+
+        # 设置重定向限制
+        if "allow_redirects" not in kwargs:
+            kwargs["allow_redirects"] = False  # 手动处理重定向
+
+        # 添加Content-Length限制到请求头
+        if "headers" in kwargs:
+            kwargs["headers"] = dict(kwargs["headers"])
+        else:
+            kwargs["headers"] = {}
+
+        # 执行请求并检查响应大小
+        response = await session.request(method, url, **kwargs)
+
+        # 检查响应大小
+        content_length = response.headers.get("content-length")
+        if content_length and int(content_length) > self.config.max_response_size:
+            response.close()
+            raise NetworkError(
+                "Response size exceeds maximum allowed limit",
+                url=_sanitize_url_for_logging(url),
+            )
+
+        # 手动处理重定向，限制重定向次数和验证目标URL安全性
+        redirect_count = 0
+        original_url = url
+        current_url = url
+
+        try:
+            while (
+                response.status in (301, 302, 303, 307, 308)
+                and redirect_count < self.config.max_redirects
+            ):
+                redirect_url = response.headers.get("location")
+                if not redirect_url:
+                    break
+
+                # 处理相对URL
+                redirect_url = urllib.parse.urljoin(current_url, redirect_url)
+
+                # 验证重定向URL的安全性
+                if not self._validate_redirect_url(redirect_url, original_url):
+                    raise NetworkError(
+                        "Unsafe redirect detected: "
+                        f"{_sanitize_url_for_logging(redirect_url)}",
+                        url=current_url,
+                    )
+
+                # 关闭当前响应并请求新的URL
+                response.close()
+                redirect_count += 1
+                current_url = redirect_url
+
+                # 递归请求重定向URL
+                response = await session.request(method, redirect_url, **kwargs)
+
+                # 再次检查响应大小
+                content_length = response.headers.get("content-length")
+                if (
+                    content_length
+                    and int(content_length) > self.config.max_response_size
+                ):
+                    raise NetworkError(
+                        "Redirected response size exceeds maximum allowed limit",
+                        url=_sanitize_url_for_logging(redirect_url),
+                    )
+
+        except Exception:
+            # 在异常情况下确保响应被关闭
+            if response and not response.closed:
+                response.close()
+            raise
+
+        # 如果超过重定向次数限制
+        if (
+            response.status in (301, 302, 303, 307, 308)
+            and redirect_count >= self.config.max_redirects
+        ):
+            response.close()
+            raise NetworkError(
+                "Too many redirects: exceeded maximum allowed limit",
+                url=_sanitize_url_for_logging(url),
+            )
+
+        return response
+
+
 class XiaoYuZhouDL:
     """小宇宙播客下载器 - 异步版本
 
@@ -89,7 +435,8 @@ class XiaoYuZhouDL:
         self.parser = parser or CompositeParser()
         self.progress_callback = progress_callback
 
-        # HTTP会话配置
+        # HTTP会话管理器
+        self._session_manager = SecureHTTPSessionManager(self.config)
         self._session: Optional[aiohttp.ClientSession] = None
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_downloads)
 
@@ -119,15 +466,12 @@ class XiaoYuZhouDL:
     async def _create_session(self) -> None:
         """创建HTTP会话"""
         if self._session is None:
-            timeout = aiohttp.ClientTimeout(total=self.config.timeout)
-            headers = {"User-Agent": self.config.user_agent}
-            self._session = aiohttp.ClientSession(timeout=timeout, headers=headers)
+            self._session = await self._session_manager.create_session()
 
     async def _close_session(self) -> None:
         """关闭HTTP会话"""
-        if self._session:
-            await self._session.close()
-            self._session = None
+        await self._session_manager.close_session()
+        self._session = None
 
     def _create_progress_bar(self) -> Progress:
         """创建rich进度条"""
@@ -609,6 +953,85 @@ class XiaoYuZhouDL:
         safe_name = self._sanitize_filename(base_name)
         return safe_name + extension
 
+    def _ensure_safe_filename(self, filename: str) -> str:
+        """确保文件名绝对安全，防止路径遍历攻击
+
+        Args:
+            filename: 待验证的文件名
+
+        Returns:
+            安全的文件名
+
+        Raises:
+            PathSecurityError: 检测到不安全的文件名
+        """
+        # 先检查原始filename是否包含路径分隔符 - 防止路径遍历
+        dangerous_patterns = ["..", "/", "\\"]
+        for pattern in dangerous_patterns:
+            if pattern in filename:
+                raise PathSecurityError(
+                    f"Dangerous pattern '{pattern}' found in filename",
+                    path=filename,
+                    attack_type="path_traversal"
+                )
+
+        # 检查是否为绝对路径（Windows和Unix）
+        if (filename.startswith('/') or
+            (len(filename) >= 3 and filename[1:3] == ':\\')):
+            raise PathSecurityError(
+                f"Absolute path not allowed in filename",
+                path=filename,
+                attack_type="path_traversal"
+            )
+
+        # 使用Path.name确保只有文件名部分，去除任何路径成分
+        try:
+            safe_filename = Path(filename).name
+        except (OSError, ValueError) as e:
+            raise PathSecurityError(
+                f"Invalid filename: {filename}",
+                path=filename,
+                attack_type="invalid_filename"
+            ) from e
+
+        # 检查文件名中是否包含其他危险字符
+        other_dangerous_chars = [":", "*", "?", "<", ">", "|"]
+        for char in other_dangerous_chars:
+            if char in safe_filename:
+                raise PathSecurityError(
+                    f"Dangerous character '{char}' found in filename",
+                    path=filename,
+                    attack_type="path_traversal"
+                )
+
+        # 检查是否为空或只包含点号和空格
+        if not safe_filename or safe_filename.strip() == "" or safe_filename in [".", ".."]:
+            raise PathSecurityError(
+                "Empty or invalid filename",
+                path=filename,
+                attack_type="invalid_filename"
+            )
+
+        # 限制文件名长度，保留扩展名
+        if len(safe_filename) > 255:
+            # 尝试保留扩展名
+            path_obj = Path(safe_filename)
+            extension = path_obj.suffix
+            name_without_ext = path_obj.stem
+
+            if extension:
+                # 计算可用于名称的长度
+                available_length = 255 - len(extension)
+                if available_length > 0:
+                    safe_filename = name_without_ext[:available_length] + extension
+                else:
+                    # 扩展名太长，只截断整个文件名
+                    safe_filename = safe_filename[:255]
+            else:
+                safe_filename = safe_filename[:255]
+
+        return safe_filename
+
     def _check_file_exists_and_handle(self, file_path: Path, file_type: str) -> bool:
         """检查文件是否存在并处理用户选择
 
@@ -663,30 +1086,170 @@ class XiaoYuZhouDL:
         # 默认使用m4a（小宇宙大多数音频是m4a格式）
         return ".m4a"
 
-    @wrap_exception
-    async def _download_audio(
+    async def _detect_audio_content_type(self, audio_url: str) -> Optional[str]:
+        """检测音频文件的内容类型
+
+        Args:
+            audio_url: 音频文件URL
+
+        Returns:
+            内容类型字符串，如果检测失败返回None
+        """
+        try:
+            async with await self._session_manager.safe_request(
+                "HEAD", audio_url
+            ) as response:
+                if response.status == 200:
+                    return response.headers.get("content-type")
+        except Exception:
+            # 如果HEAD请求失败，返回None然后使用URL判断
+            pass
+        return None
+
+    async def _prepare_download_file_path(
         self, audio_url: str, filename: str, download_dir: str
-    ) -> str:
-        """下载音频文件，支持重试和断点续传"""
+    ) -> tuple[Path, Path, Path]:
+        """准备下载文件路径，支持重试和断点续传
+
+        Args:
+            audio_url: 音频URL
+            filename: 文件名（不包含扩展名）
+            download_dir: 下载目录
+
+        Returns:
+            (download_path, file_path, progress_path): 下载目录、完整文件路径、进度文件路径
+        """
         # 验证下载路径安全性
         download_path = self._validate_download_path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
 
-        # 先发送HEAD请求获取content-type以确定正确的文件扩展名
-        content_type = None
-        try:
-            if self._session is not None:
-                async with self._session.head(audio_url) as response:
-                    content_type = response.headers.get("content-type")
-        except:
-            pass  # 如果HEAD请求失败，继续使用URL判断
-
-        # 确定正确的文件扩展名
+        # 检测文件类型并确定扩展名
+        content_type = await self._detect_audio_content_type(audio_url)
         extension = self._get_audio_extension(audio_url, content_type)
-        file_path = download_path / f"{filename}{extension}"
-        progress_path = download_path / f"{filename}{extension}.progress"
 
-        # 检查文件是否已存在 - 使用统一的检查逻辑
+        # 确保文件名安全，防止路径遍历攻击
+        safe_filename = self._ensure_safe_filename(f"{filename}{extension}")
+        file_path = download_path / safe_filename
+        progress_path = download_path / f"{safe_filename}.progress"
+
+        # 最终验证路径在下载目录内
+        resolved_file_path = file_path.resolve()
+        resolved_download_path = download_path.resolve()
+
+        if not str(resolved_file_path).startswith(str(resolved_download_path)):
+            raise PathSecurityError(
+                "File path escapes download directory",
+                path=str(resolved_file_path),
+                attack_type="path_traversal"
+            )
+
+        return download_path, file_path, progress_path
+
+    async def _validate_download_response(
+        self, response: aiohttp.ClientResponse, audio_url: str
+    ) -> int:
+        """验证下载响应的有效性
+
+        Args:
+            response: HTTP响应对象
+            audio_url: 音频URL
+
+        Returns:
+            文件总大小（字节）
+
+        Raises:
+            NetworkError: 当响应状态码不正确或文件过大时
+        """
+        if response.status != 200:
+            raise NetworkError(
+                f"HTTP {response.status}: Download failed",
+                url=_sanitize_url_for_logging(audio_url),
+                status_code=response.status,
+            )
+
+        total_size = int(response.headers.get("content-length", 0))
+
+        # 检查文件大小限制
+        if total_size > self.config.max_response_size:
+            raise NetworkError(
+                "File size exceeds maximum allowed limit",
+                url=_sanitize_url_for_logging(audio_url),
+            )
+
+        return total_size
+
+    async def _download_audio_stream(
+        self,
+        response: aiohttp.ClientResponse,
+        file_path: str,
+        total_size: int,
+        audio_url: str,
+    ) -> None:
+        """流式下载音频数据
+
+        Args:
+            response: HTTP响应对象
+            file_path: 目标文件路径
+            total_size: 文件总大小
+            audio_url: 音频URL
+
+        Raises:
+            NetworkError: 当下载大小超过限制时
+            FileOperationError: 当文件写入失败时
+        """
+        downloaded = 0
+        file_path_obj = Path(file_path)
+
+        # 使用rich进度条
+        with self._create_progress_bar() as progress:
+            task = progress.add_task(
+                f"🎵 下载音频: {file_path_obj.name}", total=total_size
+            )
+
+            async with aiofiles.open(file_path, "wb") as f:
+                async for chunk in response.content.iter_chunked(
+                    self.config.chunk_size
+                ):
+                    # 流式下载时检查累积大小
+                    if downloaded + len(chunk) > self.config.max_response_size:
+                        raise NetworkError(
+                            "Download size limit exceeded during streaming",
+                            url=_sanitize_url_for_logging(audio_url),
+                        )
+
+                    await f.write(chunk)
+                    downloaded += len(chunk)
+                    progress.update(task, completed=downloaded)
+
+                    # 保持原有的进度回调兼容性
+                    if self.progress_callback:
+                        progress_info = DownloadProgress(
+                            filename=file_path_obj.name,
+                            downloaded=downloaded,
+                            total=total_size,
+                        )
+                        self.progress_callback(progress_info)
+
+    @wrap_exception
+    async def _download_audio(
+        self, audio_url: str, filename: str, download_dir: str
+    ) -> str:
+        """下载音频文件主方法，支持重试和断点续传
+
+        Args:
+            audio_url: 音频文件URL
+            filename: 文件名（不包含扩展名）
+            download_dir: 下载目录
+
+        Returns:
+            下载后的文件路径
+        """
+        # 准备下载文件路径
+        download_path, file_path, progress_path = await self._prepare_download_file_path(
+            audio_url, filename, download_dir
+        )
+
+        # 检查文件是否已存在
         if not self._check_file_exists_and_handle(file_path, "音频文件"):
             return str(file_path)
 
@@ -720,7 +1283,8 @@ class XiaoYuZhouDL:
         if self._session is None:
             raise NetworkError("Session not initialized", url=audio_url)
 
-        async with self._session.get(audio_url) as response:
+        response = await self._session_manager.safe_request("GET", audio_url)
+        async with response:
             if response.status != 200:
                 raise NetworkError(
                     f"HTTP {response.status}: {response.reason}",
@@ -729,6 +1293,14 @@ class XiaoYuZhouDL:
                 )
 
             total_size = int(response.headers.get("content-length", 0))
+
+            # 检查文件大小限制
+            if total_size > self.config.max_response_size:
+                raise NetworkError(
+                    "File size exceeds maximum allowed limit",
+                    url=_sanitize_url_for_logging(audio_url),
+                )
+
             downloaded = 0
 
             # 创建进度数据
@@ -748,6 +1320,13 @@ class XiaoYuZhouDL:
                     async for chunk in response.content.iter_chunked(
                         self.config.chunk_size
                     ):
+                        # 流式下载时检查累积大小
+                        if downloaded + len(chunk) > self.config.max_response_size:
+                            raise NetworkError(
+                                "Download size limit exceeded during streaming",
+                                url=_sanitize_url_for_logging(audio_url),
+                            )
+
                         await f.write(chunk)
                         downloaded += len(chunk)
                         progress.update(task, completed=downloaded)
@@ -770,6 +1349,80 @@ class XiaoYuZhouDL:
             DownloadProgressManager.cleanup_progress(progress_path)
             return str(file_path)
 
+    def _save_download_progress(
+        self, progress_path: Path, progress_data: Dict[str, Any]
+    ) -> None:
+        """保存下载进度"""
+        DownloadProgressManager.save_progress(progress_path, progress_data)
+
+    def _load_download_progress(self, progress_path: Path) -> Optional[Dict[str, Any]]:
+        """加载下载进度"""
+        return DownloadProgressManager.load_progress(progress_path)
+
+    async def _resume_download(
+        self, audio_url: str, file_path: Path, progress_path: Path
+    ) -> bool:
+        """恢复下载"""
+        progress_data = self._load_download_progress(progress_path)
+        if not progress_data:
+            return False
+
+        resume_pos = calculate_resume_position(file_path, progress_data)
+        if resume_pos == 0:
+            return False
+
+        try:
+            headers = create_range_headers(resume_pos)
+            if self._session is not None:
+                response = await self._session_manager.safe_request("GET", audio_url, headers=headers)
+                async with response:
+                    if response.status not in [206, 200]:  # Partial Content or OK
+                        return False
+
+                    # 如果服务器不支持Range请求，重新开始
+                    if resume_pos > 0 and response.status != 206:
+                        return False
+
+                    content_length = response.headers.get("Content-Length")
+                    if content_length:
+                        remaining_size = int(content_length)
+                        total_size = resume_pos + remaining_size
+                    else:
+                        total_size = progress_data.get("total", 0)
+
+                    downloaded = resume_pos
+
+                    # 以追加模式打开文件
+                    async with aiofiles.open(file_path, "ab") as f:
+                        async for chunk in response.content.iter_chunked(
+                            self.config.chunk_size
+                        ):
+                            await f.write(chunk)
+                            downloaded += len(chunk)
+
+                            # 更新进度
+                            progress_data["downloaded"] = downloaded
+                            self._save_download_progress(progress_path, progress_data)
+
+                            # 进度回调
+                            if self.progress_callback:
+                                progress_info = DownloadProgress(
+                                    filename=file_path.name,
+                                    downloaded=downloaded,
+                                    total=total_size,
+                                )
+                                self.progress_callback(progress_info)
+
+                    # 下载完成，清理进度文件
+                    DownloadProgressManager.cleanup_progress(progress_path)
+                    return True
+
+        except Exception:
+            # 恢复失败，返回False让调用者重新开始下载
+            return False
+
+        return False
+
     @wrap_exception
     async def _generate_markdown(
         self, episode_info: EpisodeInfo, filename: str, download_dir: str
@@ -779,7 +1432,20 @@ class XiaoYuZhouDL:
         download_path = self._validate_download_path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
 
-        md_file_path = download_path / f"{filename}.md"
+        # 确保文件名安全
+        safe_filename = self._ensure_safe_filename(f"{filename}.md")
+        md_file_path = download_path / safe_filename
+
+        # 最终验证路径在下载目录内
+        resolved_file_path = md_file_path.resolve()
+        resolved_download_path = download_path.resolve()
+
+        if not str(resolved_file_path).startswith(str(resolved_download_path)):
+            raise PathSecurityError(
+                "File path escapes download directory",
+                path=str(resolved_file_path),
+                attack_type="path_traversal"
+            )
 
         # 检查文件是否已存在 - 使用统一的检查逻辑
         if not self._check_file_exists_and_handle(md_file_path, "Markdown文件"):
@@ -804,7 +1470,6 @@ class XiaoYuZhouDL:
 
     def _build_markdown_content(self, episode_info: EpisodeInfo) -> str:
         """构建Markdown文件内容 - 优化版本"""
-        from datetime import datetime
 
         # 处理show notes - 使用安全的HTML清理
         show_notes = episode_info.shownotes or DEFAULT_SHOW_NOTES
@@ -812,7 +1477,6 @@ class XiaoYuZhouDL:
         # 安全HTML清理并转换为Markdown
         if show_notes != DEFAULT_SHOW_NOTES:
             from .security import sanitize_show_notes
-
             show_notes = sanitize_show_notes(show_notes)
 
         # 构建YAML元数据
@@ -865,79 +1529,6 @@ audio_url: "{episode_info.audio_url}"
 downloaded_by: "xyz-dl"
 downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
 ---"""
-
-    def _save_download_progress(
-        self, progress_path: Path, progress_data: Dict[str, Any]
-    ) -> None:
-        """保存下载进度"""
-        DownloadProgressManager.save_progress(progress_path, progress_data)
-
-    def _load_download_progress(self, progress_path: Path) -> Optional[Dict[str, Any]]:
-        """加载下载进度"""
-        return DownloadProgressManager.load_progress(progress_path)
-
-    async def _resume_download(
-        self, audio_url: str, file_path: Path, progress_path: Path
-    ) -> bool:
-        """恢复下载"""
-        progress_data = self._load_download_progress(progress_path)
-        if not progress_data:
-            return False
-
-        resume_pos = calculate_resume_position(file_path, progress_data)
-        if resume_pos == 0:
-            return False
-
-        try:
-            headers = create_range_headers(resume_pos)
-            if self._session is not None:
-                async with self._session.get(audio_url, headers=headers) as response:
-                    if response.status not in [206, 200]:  # Partial Content or OK
-                        return False
-
-                    # 如果服务器不支持Range请求，重新开始
-                    if resume_pos > 0 and response.status != 206:
-                        return False
-
-                    content_length = response.headers.get("Content-Length")
-                    if content_length:
-                        remaining_size = int(content_length)
-                        total_size = resume_pos + remaining_size
-                    else:
-                        total_size = progress_data.get("total", 0)
-
-                    downloaded = resume_pos
-
-                    # 以追加模式打开文件
-                    async with aiofiles.open(file_path, "ab") as f:
-                        async for chunk in response.content.iter_chunked(
-                            self.config.chunk_size
-                        ):
-                            await f.write(chunk)
-                            downloaded += len(chunk)
-
-                            # 更新进度
-                            progress_data["downloaded"] = downloaded
-                            self._save_download_progress(progress_path, progress_data)
-
-                            # 进度回调
-                            if self.progress_callback:
-                                progress_info = DownloadProgress(
-                                    filename=file_path.name,
-                                    downloaded=downloaded,
-                                    total=total_size,
-                                )
-                                self.progress_callback(progress_info)
-
-                    # 下载完成，清理进度文件
-                    DownloadProgressManager.cleanup_progress(progress_path)
-                    return True
-
-        except Exception:
-            # 恢复失败，返回False让调用者重新开始下载
-            return False
-
-        return False
 
     # 同步接口 - 向后兼容，使用智能适配器
     def download_sync(self, request: Union[DownloadRequest, str]) -> DownloadResult:

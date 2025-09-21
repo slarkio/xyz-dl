@@ -3,13 +3,11 @@
 验证新的安全文件名清理器能够正确处理各种安全威胁
 """
 
-import platform
-
 import pytest
-
+import platform
 from src.xyz_dl.filename_sanitizer import (
-    LegacyFilenameSanitizer,
     SecureFilenameSanitizer,
+    LegacyFilenameSanitizer,
     create_filename_sanitizer,
 )
 

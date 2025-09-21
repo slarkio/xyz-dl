@@ -3,16 +3,15 @@
 测试各种异常情况下的错误处理和恢复机制
 """
 
-import aiohttp
 import pytest
+import aiohttp
 
-from src.xyz_dl.exceptions import NetworkError, ParseError
-from src.xyz_dl.parsers import CompositeParser, JsonScriptParser
-
+from src.xyz_dl.parsers import JsonScriptParser, CompositeParser
+from src.xyz_dl.exceptions import ParseError, NetworkError
 from .utils.mock_http import (
-    create_http_error,
     create_network_error,
     create_timeout_error,
+    create_http_error,
 )
 
 
@@ -309,22 +308,19 @@ class TestCompositeParserFallback:
         assert "test" in episode_info.eid.lower()
 
     @pytest.mark.asyncio
-    async def test_fallback_parser_success(self):
-        """测试fallback解析器成功处理简单HTML的情况"""
+    async def test_all_parsers_fail(self):
+        """测试所有解析器都失败的情况"""
         parser = CompositeParser()
 
-        # 简单的HTML内容，JSON解析器会失败但HTML fallback会成功
-        simple_html = "This is not HTML at all!"
+        # 完全无效的HTML
+        invalid_html = "This is not HTML at all!"
 
-        # 这应该成功，因为HTML fallback解析器可以处理任何内容
-        result = await parser.parse_episode_info(
-            simple_html, "https://www.xiaoyuzhoufm.com/episode/test"
-        )
+        with pytest.raises(ParseError) as exc_info:
+            await parser.parse_episode_info(
+                invalid_html, "https://www.xiaoyuzhoufm.com/episode/test"
+            )
 
-        # 验证fallback解析器提供了默认值
-        assert result.title == "未知标题"
-        assert result.podcast.title == "未知播客"
-        assert result.eid == "test"
+        assert "All parsers failed" in str(exc_info.value)
 
 
 class TestFileOperationExceptions:

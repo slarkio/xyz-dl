@@ -2,13 +2,13 @@
 
 import pytest
 
-from src.xyz_dl.exceptions import ParseError
 from src.xyz_dl.parsers import (
-    CompositeParser,
+    UrlValidator,
     HtmlFallbackParser,
     JsonScriptParser,
-    UrlValidator,
+    CompositeParser,
 )
+from src.xyz_dl.exceptions import ParseError
 
 
 class TestUrlValidator:

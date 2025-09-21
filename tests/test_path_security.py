@@ -4,11 +4,10 @@
 """
 
 import os
+import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
-
-import pytest
+from unittest.mock import Mock, AsyncMock
 
 from xyz_dl.downloader import XiaoYuZhouDL
 from xyz_dl.exceptions import PathSecurityError
@@ -191,3 +190,115 @@ class TestPathTraversalSecurity:
             except PathSecurityError:
                 # 如果被阻止也是可以接受的
                 pass
+
+    def test_ensure_safe_filename_path_traversal(self):
+        """测试_ensure_safe_filename方法防止路径遍历"""
+        downloader = XiaoYuZhouDL()
+
+        # 测试各种路径遍历攻击
+        malicious_filenames = [
+            "../../../etc/passwd",
+            "..\\..\\windows\\system32\\config",
+            "/etc/passwd",
+            "C:\\Windows\\System32\\config",
+            "file/with/slashes.txt",
+            "file\\with\\backslashes.txt",
+            "file:with:colons.txt",
+            "file*with*wildcards.txt",
+            "file?with?questions.txt",
+            "file<with>brackets.txt",
+            "file|with|pipes.txt",
+        ]
+
+        for malicious_filename in malicious_filenames:
+            with pytest.raises(PathSecurityError) as exc_info:
+                downloader._ensure_safe_filename(malicious_filename)
+            assert "path_traversal" in str(exc_info.value) or "invalid_filename" in str(exc_info.value)
+
+    def test_ensure_safe_filename_valid_cases(self):
+        """测试_ensure_safe_filename方法的有效情况"""
+        downloader = XiaoYuZhouDL()
+
+        valid_filenames = [
+            "normal_file.txt",
+            "中文文件名.mp3",
+            "file-with-dashes.md",
+            "file_with_underscores.wav",
+            "file123.m4a",
+            "UPPERCASE.MP3",
+        ]
+
+        for valid_filename in valid_filenames:
+            result = downloader._ensure_safe_filename(valid_filename)
+            assert result == valid_filename
+            assert ".." not in result
+            assert "/" not in result
+            assert "\\" not in result
+
+    def test_ensure_safe_filename_empty_cases(self):
+        """测试_ensure_safe_filename方法的空值情况"""
+        downloader = XiaoYuZhouDL()
+
+        empty_cases = ["", ".", "   "]
+
+        for empty_case in empty_cases:
+            with pytest.raises(PathSecurityError) as exc_info:
+                downloader._ensure_safe_filename(empty_case)
+            assert "invalid_filename" in str(exc_info.value)
+
+        # 单独测试包含..的情况，这些会被归类为路径遍历
+        traversal_cases = ["..", "..."]
+        for traversal_case in traversal_cases:
+            with pytest.raises(PathSecurityError) as exc_info:
+                downloader._ensure_safe_filename(traversal_case)
+            assert "path_traversal" in str(exc_info.value)
+
+    def test_filename_length_truncation(self):
+        """测试文件名长度截断"""
+        downloader = XiaoYuZhouDL()
+
+        # 创建超长文件名
+        long_filename = "a" * 300 + ".txt"
+        result = downloader._ensure_safe_filename(long_filename)
+
+        # 应该被截断到255字符
+        assert len(result) <= 255
+        assert result.endswith(".txt")
+
+    @pytest.mark.asyncio
+    async def test_path_validation_in_audio_download(self):
+        """测试音频下载中的路径验证"""
+        downloader = XiaoYuZhouDL()
+
+        # 创建包含路径遍历的恶意文件名
+        malicious_filename = "../../../malicious"
+
+        with pytest.raises(PathSecurityError):
+            await downloader._prepare_download_file_path(
+                "https://example.com/audio.mp3",
+                malicious_filename,
+                "/tmp/downloads"
+            )
+
+    @pytest.mark.asyncio
+    async def test_path_validation_in_markdown_generation(self):
+        """测试Markdown生成中的路径验证"""
+        from xyz_dl.models import EpisodeInfo, PodcastInfo
+
+        downloader = XiaoYuZhouDL()
+
+        # 创建模拟的episode信息
+        mock_episode = EpisodeInfo(
+            title="Test Episode",
+            podcast=PodcastInfo(title="Test Podcast", author="Test Author"),
+            shownotes="Test Notes",
+            audio_url="http://example.com/audio.mp3",
+        )
+
+        # 测试恶意文件名
+        malicious_filename = "../../../malicious"
+
+        with pytest.raises(PathSecurityError):
+            await downloader._generate_markdown(
+                mock_episode, malicious_filename, "/tmp/downloads"
+            )

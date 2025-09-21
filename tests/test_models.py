@@ -4,12 +4,12 @@ import pytest
 from pydantic import ValidationError
 
 from src.xyz_dl.models import (
-    Config,
-    DownloadProgress,
+    PodcastInfo,
+    EpisodeInfo,
     DownloadRequest,
     DownloadResult,
-    EpisodeInfo,
-    PodcastInfo,
+    DownloadProgress,
+    Config,
 )
 
 
