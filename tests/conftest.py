@@ -1,13 +1,15 @@
 """pytest配置文件"""
 
-import pytest
 import asyncio
 import os
 from pathlib import Path
 
+import pytest
+
+from .utils.mock_http import HTTPMocker
+
 # 导入测试工具
 from .utils.test_data_manager import TestDataManager
-from .utils.mock_http import HTTPMocker
 
 
 @pytest.fixture(scope="session")

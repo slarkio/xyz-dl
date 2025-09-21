@@ -8,8 +8,10 @@
 5. 文件名注入攻击
 """
 
-import pytest
 import platform
+
+import pytest
+
 from src.xyz_dl.downloader import XiaoYuZhouDL
 from src.xyz_dl.models import EpisodeInfo, PodcastInfo
 

@@ -1,12 +1,13 @@
 """测试下载器模块"""
 
-import pytest
 from unittest.mock import Mock, patch
 
-from src.xyz_dl.downloader import XiaoYuZhouDL
-from src.xyz_dl.models import DownloadRequest, EpisodeInfo, PodcastInfo, Config
-from src.xyz_dl.exceptions import ValidationError
+import pytest
 from pydantic import ValidationError as PydanticValidationError
+
+from src.xyz_dl.downloader import XiaoYuZhouDL
+from src.xyz_dl.exceptions import ValidationError
+from src.xyz_dl.models import Config, DownloadRequest, EpisodeInfo, PodcastInfo
 
 
 class TestXiaoYuZhouDL:

@@ -3,8 +3,8 @@
 定义应用专用的异常类，提供清晰的错误处理机制
 """
 
-from typing import Any, Dict, Optional, Callable, TypeVar, cast
 from functools import wraps
+from typing import Any, Callable, Dict, Optional, TypeVar, cast
 
 F = TypeVar("F", bound=Callable[..., Any])
 

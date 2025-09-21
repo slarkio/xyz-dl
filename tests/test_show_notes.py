@@ -4,11 +4,12 @@
 """
 
 import os
-import pytest
 from pathlib import Path
 
-from src.xyz_dl.parsers import JsonScriptParser
+import pytest
+
 from src.xyz_dl.downloader import XiaoYuZhouDL
+from src.xyz_dl.parsers import JsonScriptParser
 
 
 class TestShowNotesDownload:

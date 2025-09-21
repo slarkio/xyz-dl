@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Dict, List
 from urllib.parse import urlparse
 
-import aiohttp
 import aiofiles
+import aiohttp
 
 
 class TestDataManager:
