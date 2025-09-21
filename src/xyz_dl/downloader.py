@@ -1283,7 +1283,8 @@ class XiaoYuZhouDL:
         if self._session is None:
             raise NetworkError("Session not initialized", url=audio_url)
 
-        async with self._session_manager.safe_request("GET", audio_url) as response:
+        response = await self._session_manager.safe_request("GET", audio_url)
+        async with response:
             if response.status != 200:
                 raise NetworkError(
                     f"HTTP {response.status}: {response.reason}",
@@ -1292,6 +1293,14 @@ class XiaoYuZhouDL:
                 )
 
             total_size = int(response.headers.get("content-length", 0))
+
+            # 检查文件大小限制
+            if total_size > self.config.max_response_size:
+                raise NetworkError(
+                    "File size exceeds maximum allowed limit",
+                    url=_sanitize_url_for_logging(audio_url),
+                )
+
             downloaded = 0
 
             # 创建进度数据
@@ -1311,6 +1320,13 @@ class XiaoYuZhouDL:
                     async for chunk in response.content.iter_chunked(
                         self.config.chunk_size
                     ):
+                        # 流式下载时检查累积大小
+                        if downloaded + len(chunk) > self.config.max_response_size:
+                            raise NetworkError(
+                                "Download size limit exceeded during streaming",
+                                url=_sanitize_url_for_logging(audio_url),
+                            )
+
                         await f.write(chunk)
                         downloaded += len(chunk)
                         progress.update(task, completed=downloaded)
@@ -1358,7 +1374,8 @@ class XiaoYuZhouDL:
         try:
             headers = create_range_headers(resume_pos)
             if self._session is not None:
-                async with self._session_manager.safe_request("GET", audio_url, headers=headers) as response:
+                response = await self._session_manager.safe_request("GET", audio_url, headers=headers)
+                async with response:
                     if response.status not in [206, 200]:  # Partial Content or OK
                         return False
 
