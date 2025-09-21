@@ -45,13 +45,13 @@ class HTTPClient:
 
     # 安全的内部IP范围 (RFC 1918)
     PRIVATE_IP_RANGES = [
-        "127.0.0.0/8",      # 本地回环
-        "10.0.0.0/8",       # 私有网络 A类
-        "172.16.0.0/12",    # 私有网络 B类
-        "192.168.0.0/16",   # 私有网络 C类
-        "169.254.0.0/16",   # 链路本地
-        "224.0.0.0/4",      # 多播
-        "240.0.0.0/4",      # 实验性
+        "127.0.0.0/8",  # 本地回环
+        "10.0.0.0/8",  # 私有网络 A类
+        "172.16.0.0/12",  # 私有网络 B类
+        "192.168.0.0/16",  # 私有网络 C类
+        "169.254.0.0/16",  # 链路本地
+        "224.0.0.0/4",  # 多播
+        "240.0.0.0/4",  # 实验性
     ]
 
     def __init__(self, config: Config):
@@ -107,6 +107,7 @@ class HTTPClient:
         """
         if not self.config.ssl_verify:
             import warnings
+
             warnings.warn(
                 "SSL verification is disabled. This is not recommended for production use.",
                 UserWarning,
@@ -131,7 +132,9 @@ class HTTPClient:
 
         return ssl_context
 
-    def _create_connector(self, ssl_context: Union[ssl.SSLContext, bool]) -> aiohttp.TCPConnector:
+    def _create_connector(
+        self, ssl_context: Union[ssl.SSLContext, bool]
+    ) -> aiohttp.TCPConnector:
         """创建TCP连接器"""
         return aiohttp.TCPConnector(
             ssl=ssl_context,
@@ -153,10 +156,7 @@ class HTTPClient:
 
     def _create_secure_headers(self) -> Dict[str, str]:
         """创建安全的HTTP头"""
-        headers = {
-            "User-Agent": self.config.user_agent,
-            **self.config.security_headers
-        }
+        headers = {"User-Agent": self.config.user_agent, **self.config.security_headers}
 
         # 移除可能暴露信息的头
         headers.pop("Server", None)
@@ -200,8 +200,10 @@ class HTTPClient:
             if self.config.allowed_redirect_hosts:
                 if parsed.hostname not in self.config.allowed_redirect_hosts:
                     # 允许同域重定向（但仍需要原始域名也不是私有IP）
-                    if (parsed.hostname != original_parsed.hostname or
-                        self._is_private_ip(original_parsed.hostname)):
+                    if (
+                        parsed.hostname != original_parsed.hostname
+                        or self._is_private_ip(original_parsed.hostname)
+                    ):
                         return False
 
             return True
@@ -239,7 +241,9 @@ class HTTPClient:
             # 不是IP地址，认为是域名，返回False
             return False
 
-    async def safe_request(self, method: str, url: str, **kwargs: Any) -> aiohttp.ClientResponse:
+    async def safe_request(
+        self, method: str, url: str, **kwargs: Any
+    ) -> aiohttp.ClientResponse:
         """执行安全的HTTP请求，包含大小限制和重定向控制
 
         Args:
@@ -287,7 +291,7 @@ class HTTPClient:
         self,
         response: aiohttp.ClientResponse,
         original_url: str,
-        request_kwargs: Dict[str, Any]
+        request_kwargs: Dict[str, Any],
     ) -> aiohttp.ClientResponse:
         """处理重定向逻辑
 
@@ -327,11 +331,16 @@ class HTTPClient:
                 current_url = redirect_url
 
                 # 递归请求重定向URL
-                response = await self._session.request("GET", redirect_url, **request_kwargs)
+                response = await self._session.request(
+                    "GET", redirect_url, **request_kwargs
+                )
 
                 # 再次检查响应大小
                 content_length = response.headers.get("content-length")
-                if content_length and int(content_length) > self.config.max_response_size:
+                if (
+                    content_length
+                    and int(content_length) > self.config.max_response_size
+                ):
                     raise NetworkError(
                         "Redirected response size exceeds maximum allowed limit",
                         url=_sanitize_url_for_logging(redirect_url),

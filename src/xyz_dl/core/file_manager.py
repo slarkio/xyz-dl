@@ -167,8 +167,8 @@ class FileManager:
             "/..",
             "\\..",
             "%2e%2e",  # URL编码的..
-            "%2f",     # URL编码的/
-            "%5c",     # URL编码的\
+            "%2f",  # URL编码的/
+            "%5c",  # URL编码的\
         ]
 
         for pattern in dangerous_patterns:
@@ -245,7 +245,7 @@ class FileManager:
         # 用户安全区域
         user_safe_areas = [
             Path.home(),  # 用户主目录
-            Path.cwd(),   # 当前工作目录
+            Path.cwd(),  # 当前工作目录
         ]
 
         # 检查路径是否在安全区域内或其子目录中
@@ -280,16 +280,15 @@ class FileManager:
                 raise PathSecurityError(
                     f"Dangerous pattern '{pattern}' found in filename",
                     path=filename,
-                    attack_type="path_traversal"
+                    attack_type="path_traversal",
                 )
 
         # 检查是否为绝对路径
-        if (filename.startswith('/') or
-            (len(filename) >= 3 and filename[1:3] == ':\\')):
+        if filename.startswith("/") or (len(filename) >= 3 and filename[1:3] == ":\\"):
             raise PathSecurityError(
                 "Absolute path not allowed in filename",
                 path=filename,
-                attack_type="path_traversal"
+                attack_type="path_traversal",
             )
 
         # 使用Path.name确保只有文件名部分
@@ -299,7 +298,7 @@ class FileManager:
             raise PathSecurityError(
                 f"Invalid filename: {filename}",
                 path=filename,
-                attack_type="invalid_filename"
+                attack_type="invalid_filename",
             ) from e
 
         # 检查文件名中是否包含其他危险字符
@@ -309,15 +308,19 @@ class FileManager:
                 raise PathSecurityError(
                     f"Dangerous character '{char}' found in filename",
                     path=filename,
-                    attack_type="path_traversal"
+                    attack_type="path_traversal",
                 )
 
         # 检查是否为空或只包含点号和空格
-        if not safe_filename or safe_filename.strip() == "" or safe_filename in [".", ".."]:
+        if (
+            not safe_filename
+            or safe_filename.strip() == ""
+            or safe_filename in [".", ".."]
+        ):
             raise PathSecurityError(
                 "Empty or invalid filename",
                 path=filename,
-                attack_type="invalid_filename"
+                attack_type="invalid_filename",
             )
 
         # 限制文件名长度
@@ -337,7 +340,9 @@ class FileManager:
 
         return safe_filename
 
-    async def write_file(self, file_path: Path, content: str, encoding: str = "utf-8") -> None:
+    async def write_file(
+        self, file_path: Path, content: str, encoding: str = "utf-8"
+    ) -> None:
         """异步写入文件
 
         Args:

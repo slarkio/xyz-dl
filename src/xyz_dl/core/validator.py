@@ -50,6 +50,7 @@ class ValidationManager:
 
         # 检查是否包含明显的非法字符
         import re
+
         if re.search(r'[<>"|\\]', url):
             raise ValidationError(f"Invalid characters in URL: {url}")
 
@@ -57,7 +58,7 @@ class ValidationManager:
         # Episode ID应该是纯字母数字组合，不应该包含连字符或多个单词
         if not url.startswith("http"):
             # 检查是否为有效的episode ID格式
-            if not re.match(r'^[a-zA-Z0-9]{6,24}$', url):
+            if not re.match(r"^[a-zA-Z0-9]{6,24}$", url):
                 raise ValidationError(f"Invalid URL format: {url}")
 
         try:
@@ -123,5 +124,7 @@ class ValidationManager:
         """
         valid_modes = ["audio", "md", "both", "url_only"]
         if mode not in valid_modes:
-            raise ValidationError(f"Invalid download mode: {mode}. Valid modes: {valid_modes}")
+            raise ValidationError(
+                f"Invalid download mode: {mode}. Valid modes: {valid_modes}"
+            )
         return True

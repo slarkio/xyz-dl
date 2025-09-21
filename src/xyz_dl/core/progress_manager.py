@@ -30,7 +30,9 @@ class ProgressManager:
     - 多任务进度跟踪
     """
 
-    def __init__(self, progress_callback: Optional[Callable[[DownloadProgress], None]] = None):
+    def __init__(
+        self, progress_callback: Optional[Callable[[DownloadProgress], None]] = None
+    ):
         """初始化进度管理器
 
         Args:
@@ -181,7 +183,9 @@ class ProgressManager:
                 )
                 self.manager.progress_callback(progress_info)
 
-    def create_rich_progress_context(self, description: str, total: int) -> RichProgressContext:
+    def create_rich_progress_context(
+        self, description: str, total: int
+    ) -> RichProgressContext:
         """创建Rich进度条上下文管理器
 
         Args:
@@ -200,7 +204,9 @@ class SimpleProgressManager:
     用于不需要Rich进度条的场景，只提供基本的进度跟踪功能。
     """
 
-    def __init__(self, progress_callback: Optional[Callable[[DownloadProgress], None]] = None):
+    def __init__(
+        self, progress_callback: Optional[Callable[[DownloadProgress], None]] = None
+    ):
         """初始化简单进度管理器
 
         Args:
@@ -234,6 +240,7 @@ class SimpleProgressManager:
         Returns:
             进度跟踪函数
         """
+
         def track(downloaded: int):
             self.track_progress(filename, downloaded, total)
 

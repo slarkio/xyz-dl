@@ -103,7 +103,9 @@ class FilenameGenerator:
         """从标题中提取ID（备用方案）"""
         return str(int(datetime.now().timestamp()))
 
-    def create_safe_filename(self, title: str, author: str, extension: str = ".md") -> str:
+    def create_safe_filename(
+        self, title: str, author: str, extension: str = ".md"
+    ) -> str:
         """创建安全的文件名
 
         Args:

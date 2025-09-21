@@ -151,6 +151,7 @@ class DownloaderCore:
             async with response:
                 if response.status != 200:
                     from ..exceptions import NetworkError
+
                     raise NetworkError(
                         f"HTTP {response.status}: {response.reason}",
                         url=url,
@@ -166,6 +167,7 @@ class DownloaderCore:
 
         except Exception as e:
             from ..exceptions import ParseError
+
             raise ParseError(f"Failed to parse episode: {e}", url=url)
 
     def _generate_filename(self, episode_info) -> str:
@@ -182,7 +184,9 @@ class DownloaderCore:
         generator = create_filename_generator()
         return generator.generate(episode_info)
 
-    async def _generate_markdown(self, episode_info, filename: str, download_dir: str) -> str:
+    async def _generate_markdown(
+        self, episode_info, filename: str, download_dir: str
+    ) -> str:
         """生成Markdown文件
 
         Args:
@@ -252,7 +256,9 @@ downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
 {show_notes}
 """
 
-    async def _download_audio(self, audio_url: str, filename: str, download_dir: str) -> str:
+    async def _download_audio(
+        self, audio_url: str, filename: str, download_dir: str
+    ) -> str:
         """下载音频文件
 
         Args:
@@ -280,6 +286,7 @@ downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
         async with response:
             if response.status != 200:
                 from ..exceptions import NetworkError
+
                 raise NetworkError(
                     f"HTTP {response.status}: Download failed",
                     url=audio_url,
@@ -291,6 +298,7 @@ downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
             # 检查文件大小限制
             if total_size > self.config.max_response_size:
                 from ..exceptions import NetworkError
+
                 raise NetworkError(
                     "File size exceeds maximum allowed limit",
                     url=audio_url,
@@ -304,7 +312,9 @@ downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
 
                 # 写入文件
                 with open(file_path, "wb") as f:
-                    async for chunk in response.content.iter_chunked(self.config.chunk_size):
+                    async for chunk in response.content.iter_chunked(
+                        self.config.chunk_size
+                    ):
                         f.write(chunk)
                         downloaded += len(chunk)
                         progress_ctx.update(downloaded)
