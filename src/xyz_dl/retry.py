@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import random
 import time
 from datetime import datetime
 from pathlib import Path
@@ -166,8 +167,6 @@ def create_retry_decorator(
 
                     # 添加随机抖动
                     if config.jitter:
-                        import random
-
                         delay *= 0.5 + random.random() * 0.5
 
                     stats.record_delay(delay)
