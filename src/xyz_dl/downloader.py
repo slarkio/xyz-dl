@@ -34,6 +34,7 @@ DEFAULT_UNKNOWN_AUTHOR = "未知作者"
 DEFAULT_SHOW_NOTES = "暂无节目介绍"
 TEMP_DIRS = ["/tmp", "/var/folders"]  # 安全的临时目录前缀
 
+from .async_adapter import smart_run
 from .config import get_config
 from .exceptions import (
     DownloadError,
@@ -205,10 +206,34 @@ class XiaoYuZhouDL:
 
             return result
 
-        except Exception as e:
+        except (
+            ValidationError,
+            NetworkError,
+            ParseError,
+            DownloadError,
+            FileOperationError,
+            PathSecurityError,
+        ) as e:
+            # 处理已知的应用异常，保留异常类型和上下文
             return DownloadResult(
                 success=False,
-                error=str(e),
+                error=f"{type(e).__name__}: {e}",
+                episode_info=episode_info if "episode_info" in locals() else None,
+                audio_path=None,
+                md_path=None,
+            )
+        except Exception as e:
+            # 处理未知异常，记录完整错误信息用于调试
+            import traceback
+            error_details = f"Unexpected error ({type(e).__name__}): {e}"
+
+            # 只在调试模式下包含堆栈跟踪
+            if self.config.debug_mode and hasattr(e, '__traceback__'):
+                error_details += f"\nTraceback: {traceback.format_exc()}"
+
+            return DownloadResult(
+                success=False,
+                error=error_details,
                 episode_info=episode_info if "episode_info" in locals() else None,
                 audio_path=None,
                 md_path=None,
@@ -513,6 +538,12 @@ class XiaoYuZhouDL:
         Returns:
             True表示覆盖，False表示跳过
         """
+        import sys
+
+        # 非交互模式或无TTY环境，使用默认行为
+        if self.config.non_interactive or not sys.stdin.isatty():
+            return self.config.default_overwrite_behavior
+
         print(f"\n⚠️  {file_type} 已存在: {file_path.name}")
 
         while True:
@@ -788,10 +819,14 @@ downloaded_by: "xyz-dl"
 downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
 ---"""
 
-    # 同步接口 - 向后兼容
+    # 同步接口 - 向后兼容，使用智能适配器
     def download_sync(self, request: Union[DownloadRequest, str]) -> DownloadResult:
-        """同步下载接口 - 向后兼容"""
-        return asyncio.run(self.download(request))
+        """同步下载接口 - 向后兼容
+
+        使用智能适配器自动处理事件循环嵌套问题
+        支持在 Jupyter Notebook 和其他环境中使用
+        """
+        return smart_run(self.download(request))
 
     # 批量下载
     async def download_batch(
@@ -848,7 +883,11 @@ def download_episode_sync(
     config: Optional[Config] = None,
     progress_callback: Optional[Callable[[DownloadProgress], None]] = None,
 ) -> DownloadResult:
-    """同步版本的便捷下载函数"""
-    return asyncio.run(
+    """同步版本的便捷下载函数
+
+    使用智能适配器自动处理事件循环嵌套问题
+    支持在任何环境中调用，包括 Jupyter Notebook
+    """
+    return smart_run(
         download_episode(url, download_dir, mode, config, progress_callback)
     )

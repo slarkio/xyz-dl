@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # 并发设置
     xyz_dl_max_concurrent_downloads: int = 3
 
+    # 交互模式设置
+    xyz_dl_non_interactive: bool = False
+    xyz_dl_default_overwrite_behavior: bool = False
+    xyz_dl_debug_mode: bool = False
+
     def to_config(self) -> Config:
         """转换为 Config 模型"""
         return Config(
@@ -42,6 +47,9 @@ class Settings(BaseSettings):
             user_agent=self.xyz_dl_user_agent,
             max_filename_length=self.xyz_dl_max_filename_length,
             max_concurrent_downloads=self.xyz_dl_max_concurrent_downloads,
+            non_interactive=self.xyz_dl_non_interactive,
+            default_overwrite_behavior=self.xyz_dl_default_overwrite_behavior,
+            debug_mode=self.xyz_dl_debug_mode,
         )
 
     model_config = SettingsConfigDict(
