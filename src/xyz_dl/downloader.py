@@ -729,12 +729,13 @@ class XiaoYuZhouDL:
         """构建Markdown文件内容 - 优化版本"""
         from datetime import datetime
 
-        # 处理show notes - 使用常量
+        # 处理show notes - 使用安全的HTML清理
         show_notes = episode_info.shownotes or DEFAULT_SHOW_NOTES
 
-        # 简单HTML清理 - 只有在不是默认值时才处理
+        # 安全HTML清理并转换为Markdown
         if show_notes != DEFAULT_SHOW_NOTES:
-            show_notes = self._clean_html_content(show_notes)
+            from .security import sanitize_show_notes
+            show_notes = sanitize_show_notes(show_notes)
 
         # 构建YAML元数据
         yaml_metadata = self._build_yaml_metadata(episode_info)
