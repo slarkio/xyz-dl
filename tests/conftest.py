@@ -1,13 +1,15 @@
 """pytest配置文件"""
 
-import pytest
 import asyncio
 import os
 from pathlib import Path
 
+import pytest
+
+from .utils.mock_http import HTTPMocker
+
 # 导入测试工具
 from .utils.test_data_manager import TestDataManager
-from .utils.mock_http import HTTPMocker
 
 
 @pytest.fixture(scope="session")
@@ -56,14 +58,11 @@ def sample_episode_data():
     """样本节目数据"""
     return {
         "title": "测试节目",
-        "podcast": {
-            "title": "测试播客",
-            "author": "测试作者"
-        },
+        "podcast": {"title": "测试播客", "author": "测试作者"},
         "duration": 3600000,  # 1小时
         "pubDate": "2025-01-01T00:00:00Z",
         "eid": "test123",
-        "shownotes": "这是测试show notes"
+        "shownotes": "这是测试show notes",
     }
 
 
@@ -73,14 +72,14 @@ def test_data_manager():
     return TestDataManager()
 
 
-@pytest.fixture(scope="function")  
+@pytest.fixture(scope="function")
 def http_mocker(test_data_manager):
     """HTTP Mock管理器fixture - function级别"""
     mocker = HTTPMocker(test_data_manager)
     mocker.start_mock()
-    
+
     yield mocker
-    
+
     # 清理
     mocker.stop_mock()
 
@@ -97,4 +96,5 @@ def test_download_dir():
 def sample_urls():
     """样本URL列表"""
     from .utils.test_data_manager import DEFAULT_TEST_URLS
+
     return DEFAULT_TEST_URLS

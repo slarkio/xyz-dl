@@ -8,8 +8,10 @@
 5. 文件名注入攻击
 """
 
-import pytest
 import platform
+
+import pytest
+
 from src.xyz_dl.downloader import XiaoYuZhouDL
 from src.xyz_dl.models import EpisodeInfo, PodcastInfo
 
@@ -26,9 +28,9 @@ class TestFilenameSanitizationSecurity:
         # Unicode控制字符可能绕过文件名清理
         malicious_names = [
             "normal_name\u0000null_byte",  # NULL字节注入
-            "file\u202Ename",  # 右到左覆盖字符
-            "file\u200Bname",  # 零宽度空格
-            "file\u00ADname",  # 软连字符
+            "file\u202ename",  # 右到左覆盖字符
+            "file\u200bname",  # 零宽度空格
+            "file\u00adname",  # 软连字符
             "file\u0085name",  # NEL字符
             "file\u2028name",  # 行分隔符
             "file\u2029name",  # 段分隔符
@@ -44,16 +46,39 @@ class TestFilenameSanitizationSecurity:
             # assert '\u202E' not in sanitized, f"RLO character found in: {repr(sanitized)}"
 
             # 临时占位符 - 展示当前实现的不足
-            print(f"Current vulnerable result for '{repr(malicious_name)}': '{repr(sanitized)}'")
+            print(
+                f"Current vulnerable result for '{repr(malicious_name)}': '{repr(sanitized)}'"
+            )
 
     def test_windows_reserved_filenames_vulnerability(self):
         """测试Windows保留文件名漏洞 - 应该失败"""
         # Windows保留的文件名
         reserved_names = [
-            "CON", "PRN", "AUX", "NUL",
-            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-            "con.txt", "PRN.mp3", "aux.md"  # 带扩展名的情况
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
+            "con.txt",
+            "PRN.mp3",
+            "aux.md",  # 带扩展名的情况
         ]
 
         for reserved_name in reserved_names:
@@ -63,7 +88,9 @@ class TestFilenameSanitizationSecurity:
             # 这些断言应该失败
             # assert sanitized.upper() not in ['CON', 'PRN', 'AUX', 'NUL'], f"Reserved name not handled: {sanitized}"
 
-            print(f"Current vulnerable result for Windows reserved name '{reserved_name}': '{sanitized}'")
+            print(
+                f"Current vulnerable result for Windows reserved name '{reserved_name}': '{sanitized}'"
+            )
 
     def test_platform_specific_characters_vulnerability(self):
         """测试平台特定字符处理漏洞 - 应该失败"""
@@ -76,10 +103,10 @@ class TestFilenameSanitizationSecurity:
 
         # Windows系统中的额外危险字符
         windows_dangerous = [
-            'file"name',   # 双引号
-            "file'name",   # 单引号
-            "file%name",   # 百分号
-            "file$name",   # 美元符号
+            'file"name',  # 双引号
+            "file'name",  # 单引号
+            "file%name",  # 百分号
+            "file$name",  # 美元符号
         ]
 
         test_chars = unix_dangerous
@@ -90,7 +117,9 @@ class TestFilenameSanitizationSecurity:
             sanitized = self.downloader._sanitize_filename(dangerous_name)
 
             # 当前实现可能无法正确处理所有平台特定字符
-            print(f"Current result for dangerous chars '{repr(dangerous_name)}': '{repr(sanitized)}'")
+            print(
+                f"Current result for dangerous chars '{repr(dangerous_name)}': '{repr(sanitized)}'"
+            )
 
     def test_filename_length_truncation_vulnerability(self):
         """测试文件名长度截断安全问题 - 应该失败"""
@@ -114,13 +143,10 @@ class TestFilenameSanitizationSecurity:
             # 路径遍历
             "../../../etc/passwd",
             "..\\..\\..\\windows\\system32\\config\\sam",
-
             # 空字节注入
             "normal.txt\x00.exe",
-
             # 双重编码
             "%252e%252e%252f",  # ../ 的双重URL编码
-
             # Unicode规范化攻击
             "ﬁle.txt",  # 连字符fi
             "file․txt",  # 单点替代
@@ -137,7 +163,7 @@ class TestFilenameSanitizationSecurity:
         # 组合多种攻击技术
         mixed_attacks = [
             "CON\u0000.txt",  # Windows保留名 + NULL字节
-            "../\u202Econ.txt",  # 路径遍历 + Unicode控制字符
+            "../\u202econ.txt",  # 路径遍历 + Unicode控制字符
             "a" * 180 + "/../passwd",  # 长度 + 路径遍历
         ]
 
@@ -149,10 +175,10 @@ class TestFilenameSanitizationSecurity:
         """测试当前正则表达式的不足"""
         # 当前的正则表达式: r'[<>:"/\\|?*]'
         current_regex_bypasses = [
-            "file\nname",      # 换行符不在正则中
+            "file\nname",  # 换行符不在正则中
             "file\u0000name",  # NULL字节不在正则中
-            "CON",             # Windows保留名不在正则中
-            "file\u202Ename",  # Unicode控制字符不在正则中
+            "CON",  # Windows保留名不在正则中
+            "file\u202ename",  # Unicode控制字符不在正则中
         ]
 
         for bypass in current_regex_bypasses:
@@ -165,10 +191,10 @@ class TestFilenameSanitizationSecurity:
         """测试Windows特有的漏洞"""
         # Windows文件名结尾不能有点号或空格
         windows_edge_cases = [
-            "filename.",    # 结尾点号
-            "filename ",    # 结尾空格
-            "filename..",   # 多个点号
-            "filename  ",   # 多个空格
+            "filename.",  # 结尾点号
+            "filename ",  # 结尾空格
+            "filename..",  # 多个点号
+            "filename  ",  # 多个空格
         ]
 
         for edge_case in windows_edge_cases:
@@ -180,9 +206,9 @@ class TestFilenameSanitizationSecurity:
         """测试Unix特有的漏洞"""
         # Unix系统中的隐藏文件和特殊名称
         unix_edge_cases = [
-            ".hidden",      # 隐藏文件
-            "..hidden",     # 父目录引用变体
-            "-filename",    # 可能被解释为命令行参数
+            ".hidden",  # 隐藏文件
+            "..hidden",  # 父目录引用变体
+            "-filename",  # 可能被解释为命令行参数
         ]
 
         for edge_case in unix_edge_cases:
@@ -226,11 +252,11 @@ class TestCurrentImplementationLimitations:
         """测试安全验证不足"""
         # 这些文件名应该被拒绝或特殊处理
         potentially_dangerous = [
-            "",              # 空文件名
-            ".",             # 当前目录
-            "..",            # 父目录
-            " ",             # 纯空格
-            "\t\n\r",        # 纯空白字符
+            "",  # 空文件名
+            ".",  # 当前目录
+            "..",  # 父目录
+            " ",  # 纯空格
+            "\t\n\r",  # 纯空白字符
         ]
 
         for dangerous in potentially_dangerous:

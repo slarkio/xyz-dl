@@ -6,7 +6,7 @@
 import json
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 from urllib.parse import unquote
 
 import aiohttp

@@ -7,7 +7,7 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional, Any, List
+from typing import Any, List, Optional
 
 from rich import print as rprint
 from rich.console import Console
@@ -26,9 +26,8 @@ from rich.text import Text
 
 from .config import get_config
 from .downloader import XiaoYuZhouDL
-from .models import DownloadRequest
 from .exceptions import XyzDlException
-from .models import Config, DownloadProgress, DownloadResult
+from .models import Config, DownloadProgress, DownloadRequest, DownloadResult
 
 
 class RichProgressHandler:

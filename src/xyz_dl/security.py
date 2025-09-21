@@ -3,9 +3,11 @@ HTML安全清理模块
 
 实现安全的HTML清理功能，防止XSS注入攻击
 """
-import bleach
+
 import html
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
+import bleach
 
 
 class HtmlSanitizer:
@@ -13,20 +15,32 @@ class HtmlSanitizer:
 
     # 允许的安全HTML标签白名单（移除span和div以防CSS注入）
     ALLOWED_TAGS: List[str] = [
-        'p', 'br', 'strong', 'em', 'b', 'i', 'u', 's',
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'ul', 'ol', 'li',
-        'blockquote',
-        'a'
+        "p",
+        "br",
+        "strong",
+        "em",
+        "b",
+        "i",
+        "u",
+        "s",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "ul",
+        "ol",
+        "li",
+        "blockquote",
+        "a",
     ]
 
     # 允许的安全HTML属性白名单（移除class属性以防CSS注入）
-    ALLOWED_ATTRIBUTES: Dict[str, List[str]] = {
-        'a': ['href', 'title']
-    }
+    ALLOWED_ATTRIBUTES: Dict[str, List[str]] = {"a": ["href", "title"]}
 
     # 允许的协议白名单
-    ALLOWED_PROTOCOLS: List[str] = ['http', 'https', 'mailto']
+    ALLOWED_PROTOCOLS: List[str] = ["http", "https", "mailto"]
 
     def __init__(self) -> None:
         """初始化HTML清理器"""
@@ -36,11 +50,11 @@ class HtmlSanitizer:
         """配置bleach清理器"""
         # 使用严格的安全配置
         self.bleach_config = {
-            'tags': self.ALLOWED_TAGS,
-            'attributes': self.ALLOWED_ATTRIBUTES,
-            'protocols': self.ALLOWED_PROTOCOLS,
-            'strip': True,  # 移除不允许的标签而不是转义
-            'strip_comments': True,  # 移除HTML注释
+            "tags": self.ALLOWED_TAGS,
+            "attributes": self.ALLOWED_ATTRIBUTES,
+            "protocols": self.ALLOWED_PROTOCOLS,
+            "strip": True,  # 移除不允许的标签而不是转义
+            "strip_comments": True,  # 移除HTML注释
         }
 
     def sanitize_html(self, html_content: str) -> str:
@@ -97,11 +111,14 @@ class HtmlSanitizer:
         import unicodedata
 
         # Unicode标准化，转换全角字符等
-        normalized = unicodedata.normalize('NFKC', content)
+        normalized = unicodedata.normalize("NFKC", content)
 
         # 移除不可见字符和控制字符
-        cleaned = ''.join(char for char in normalized
-                         if unicodedata.category(char) not in ['Cc', 'Cf', 'Cs', 'Co', 'Cn'])
+        cleaned = "".join(
+            char
+            for char in normalized
+            if unicodedata.category(char) not in ["Cc", "Cf", "Cs", "Co", "Cn"]
+        )
 
         return cleaned
 
@@ -119,8 +136,17 @@ class HtmlSanitizer:
 
         # 定义需要完全移除的危险标签（包括内容）
         dangerous_tags = [
-            'script', 'iframe', 'object', 'embed', 'form',
-            'style', 'link', 'meta', 'base', 'applet', 'noscript'
+            "script",
+            "iframe",
+            "object",
+            "embed",
+            "form",
+            "style",
+            "link",
+            "meta",
+            "base",
+            "applet",
+            "noscript",
         ]
 
         result = content
@@ -133,23 +159,25 @@ class HtmlSanitizer:
             # 增强的正则表达式，处理空白字符、注释和畸形标签
             patterns = [
                 # 标准标签，支持属性和空白字符
-                rf'<\s*{tag}\b[^>]*>.*?</\s*{tag}\s*>',
+                rf"<\s*{tag}\b[^>]*>.*?</\s*{tag}\s*>",
                 # 自闭合标签
-                rf'<\s*{tag}\b[^>]*/?\s*>',
+                rf"<\s*{tag}\b[^>]*/?\s*>",
                 # 不完整标签（开始标签后没有结束标签）
-                rf'<\s*{tag}\b[^>]*>(?!.*</\s*{tag}\s*>)',
+                rf"<\s*{tag}\b[^>]*>(?!.*</\s*{tag}\s*>)",
                 # 处理标签中包含注释的情况
-                rf'<\s*{tag}[^>]*(?:<!--[^>]*-->)*[^>]*>.*?</\s*{tag}\s*>',
+                rf"<\s*{tag}[^>]*(?:<!--[^>]*-->)*[^>]*>.*?</\s*{tag}\s*>",
                 # 嵌套和畸形标签
-                rf'<+\s*{tag}[^>]*>+.*?<+/\s*{tag}\s*>+'
+                rf"<+\s*{tag}[^>]*>+.*?<+/\s*{tag}\s*>+",
             ]
 
             for pattern in patterns:
-                result = re.sub(pattern, '', result, flags=re.IGNORECASE | re.DOTALL)
+                result = re.sub(pattern, "", result, flags=re.IGNORECASE | re.DOTALL)
 
         return result
 
-    def _remove_entity_encoded_tags(self, content: str, dangerous_tags: List[str]) -> str:
+    def _remove_entity_encoded_tags(
+        self, content: str, dangerous_tags: List[str]
+    ) -> str:
         """
         移除HTML实体编码的危险标签
 
@@ -167,21 +195,32 @@ class HtmlSanitizer:
             # 处理HTML实体编码的标签（如 &lt;script&gt;）
             entity_patterns = [
                 # 完整的实体编码标签对
-                rf'&lt;\s*{tag}\b[^&]*?&gt;.*?&lt;/\s*{tag}\s*&gt;',
+                rf"&lt;\s*{tag}\b[^&]*?&gt;.*?&lt;/\s*{tag}\s*&gt;",
                 # 自闭合实体编码标签
-                rf'&lt;\s*{tag}\b[^&]*?/?&gt;',
+                rf"&lt;\s*{tag}\b[^&]*?/?&gt;",
                 # 混合编码（部分实体编码）
-                rf'&lt;{tag}[^&]*?&gt;.*?&lt;/{tag}&gt;',
-                rf'<{tag}[^>]*?&gt;.*?&lt;/{tag}>',
+                rf"&lt;{tag}[^&]*?&gt;.*?&lt;/{tag}&gt;",
+                rf"<{tag}[^>]*?&gt;.*?&lt;/{tag}>",
             ]
             for pattern in entity_patterns:
-                result = re.sub(pattern, '', result, flags=re.IGNORECASE | re.DOTALL)
+                result = re.sub(pattern, "", result, flags=re.IGNORECASE | re.DOTALL)
 
         # 同时移除包含脚本关键词的实体编码内容
-        dangerous_keywords = ['alert', 'eval', 'document.cookie', 'innerHTML', 'outerHTML']
+        dangerous_keywords = [
+            "alert",
+            "eval",
+            "document.cookie",
+            "innerHTML",
+            "outerHTML",
+        ]
         for keyword in dangerous_keywords:
             # 移除包含危险关键词的内容
-            result = re.sub(rf'[^a-zA-Z0-9]*{keyword}[^a-zA-Z0-9]*\([^)]*\)', '', result, flags=re.IGNORECASE)
+            result = re.sub(
+                rf"[^a-zA-Z0-9]*{keyword}[^a-zA-Z0-9]*\([^)]*\)",
+                "",
+                result,
+                flags=re.IGNORECASE,
+            )
 
         return result
 
@@ -200,31 +239,33 @@ class HtmlSanitizer:
         # 移除所有可能的危险协议（包括实体编码和各种变形）
         dangerous_protocol_patterns = [
             # 基础协议模式
-            r'j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:',
-            r'v\s*b\s*s\s*c\s*r\s*i\s*p\s*t\s*:',
-            r'd\s*a\s*t\s*a\s*:\s*t\s*e\s*x\s*t\s*/\s*h\s*t\s*m\s*l',
-            r'd\s*a\s*t\s*a\s*:\s*a\s*p\s*p\s*l\s*i\s*c\s*a\s*t\s*i\s*o\s*n\s*/',
+            r"j\s*a\s*v\s*a\s*s\s*c\s*r\s*i\s*p\s*t\s*:",
+            r"v\s*b\s*s\s*c\s*r\s*i\s*p\s*t\s*:",
+            r"d\s*a\s*t\s*a\s*:\s*t\s*e\s*x\s*t\s*/\s*h\s*t\s*m\s*l",
+            r"d\s*a\s*t\s*a\s*:\s*a\s*p\s*p\s*l\s*i\s*c\s*a\s*t\s*i\s*o\s*n\s*/",
             # 实体编码模式
-            r'&#[xX]?[0-9a-fA-F]+;',
+            r"&#[xX]?[0-9a-fA-F]+;",
             # Unicode转义模式
-            r'\\u[0-9a-fA-F]{4}',
+            r"\\u[0-9a-fA-F]{4}",
             # 其他危险模式
-            r'expression\s*\(',
-            r'mocha\s*:',
-            r'livescript\s*:'
+            r"expression\s*\(",
+            r"mocha\s*:",
+            r"livescript\s*:",
         ]
 
         result = content
         for pattern in dangerous_protocol_patterns:
-            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+            result = re.sub(pattern, "", result, flags=re.IGNORECASE)
 
         # 移除可能的事件处理器属性
         event_handler_pattern = r'\s*on\w+\s*=\s*["\'][^"\'>]*["\']'
-        result = re.sub(event_handler_pattern, '', result, flags=re.IGNORECASE)
+        result = re.sub(event_handler_pattern, "", result, flags=re.IGNORECASE)
 
         # 移除style属性中的危险内容
-        style_pattern = r'style\s*=\s*["\'][^"\'>]*(?:javascript|expression|@import)[^"\'>]*["\']'
-        result = re.sub(style_pattern, '', result, flags=re.IGNORECASE)
+        style_pattern = (
+            r'style\s*=\s*["\'][^"\'>]*(?:javascript|expression|@import)[^"\'>]*["\']'
+        )
+        result = re.sub(style_pattern, "", result, flags=re.IGNORECASE)
 
         return result
 
@@ -253,8 +294,10 @@ class HtmlSanitizer:
             decode_count += 1
 
             # 每次解码后检查是否出现危险内容
-            if any(danger in current_content.lower() for danger in
-                   ['<script', 'javascript:', 'vbscript:', 'data:text/html']):
+            if any(
+                danger in current_content.lower()
+                for danger in ["<script", "javascript:", "vbscript:", "data:text/html"]
+            ):
                 # 如果解码后出现危险内容，返回解码前的安全版本
                 return previous_content
 
@@ -297,36 +340,55 @@ class HtmlSanitizer:
 
         # 转换标题
         for i in range(1, 7):
-            result = re.sub(rf'<h{i}[^>]*>(.*?)</h{i}>', rf'{"#" * i} \1\n', result, flags=re.IGNORECASE)
+            result = re.sub(
+                rf"<h{i}[^>]*>(.*?)</h{i}>",
+                rf'{"#" * i} \1\n',
+                result,
+                flags=re.IGNORECASE,
+            )
 
         # 转换段落
-        result = re.sub(r'<p[^>]*>', '\n', result, flags=re.IGNORECASE)
-        result = re.sub(r'</p>', '\n', result, flags=re.IGNORECASE)
+        result = re.sub(r"<p[^>]*>", "\n", result, flags=re.IGNORECASE)
+        result = re.sub(r"</p>", "\n", result, flags=re.IGNORECASE)
 
         # 转换换行
-        result = re.sub(r'<br[^>]*/?>', '\n', result, flags=re.IGNORECASE)
+        result = re.sub(r"<br[^>]*/?>", "\n", result, flags=re.IGNORECASE)
 
         # 转换粗体
-        result = re.sub(r'<(strong|b)[^>]*>(.*?)</\1>', r'**\2**', result, flags=re.IGNORECASE)
+        result = re.sub(
+            r"<(strong|b)[^>]*>(.*?)</\1>", r"**\2**", result, flags=re.IGNORECASE
+        )
 
         # 转换斜体
-        result = re.sub(r'<(em|i)[^>]*>(.*?)</\1>', r'*\2*', result, flags=re.IGNORECASE)
+        result = re.sub(
+            r"<(em|i)[^>]*>(.*?)</\1>", r"*\2*", result, flags=re.IGNORECASE
+        )
 
         # 转换链接
-        result = re.sub(r'<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>', r'[\2](\1)', result, flags=re.IGNORECASE)
+        result = re.sub(
+            r'<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>',
+            r"[\2](\1)",
+            result,
+            flags=re.IGNORECASE,
+        )
 
         # 转换列表项
-        result = re.sub(r'<li[^>]*>', '- ', result, flags=re.IGNORECASE)
-        result = re.sub(r'</li>', '\n', result, flags=re.IGNORECASE)
+        result = re.sub(r"<li[^>]*>", "- ", result, flags=re.IGNORECASE)
+        result = re.sub(r"</li>", "\n", result, flags=re.IGNORECASE)
 
         # 转换引用
-        result = re.sub(r'<blockquote[^>]*>(.*?)</blockquote>', r'> \1\n', result, flags=re.IGNORECASE | re.DOTALL)
+        result = re.sub(
+            r"<blockquote[^>]*>(.*?)</blockquote>",
+            r"> \1\n",
+            result,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
 
         # 移除剩余的HTML标签
-        result = re.sub(r'<[^>]+>', '', result)
+        result = re.sub(r"<[^>]+>", "", result)
 
         # 清理多余的空行
-        result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
+        result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
 
         return result
 
