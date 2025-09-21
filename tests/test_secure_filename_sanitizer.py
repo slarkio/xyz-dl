@@ -3,12 +3,14 @@
 验证新的安全文件名清理器能够正确处理各种安全威胁
 """
 
-import pytest
 import platform
+
+import pytest
+
 from src.xyz_dl.filename_sanitizer import (
-    SecureFilenameSanitizer,
     LegacyFilenameSanitizer,
-    create_filename_sanitizer
+    SecureFilenameSanitizer,
+    create_filename_sanitizer,
 )
 
 
@@ -23,9 +25,9 @@ class TestSecureFilenameSanitizer:
         """测试Unicode控制字符移除"""
         test_cases = [
             ("normal_name\u0000null_byte", "normal_namenull_byte"),
-            ("file\u202Ename", "filename"),  # 右到左覆盖字符
-            ("file\u200Bname", "filename"),  # 零宽度空格
-            ("file\u00ADname", "filename"),  # 软连字符
+            ("file\u202ename", "filename"),  # 右到左覆盖字符
+            ("file\u200bname", "filename"),  # 零宽度空格
+            ("file\u00adname", "filename"),  # 软连字符
             ("file\u0085name", "filename"),  # NEL字符
             ("file\u2028name", "filename"),  # 行分隔符
             ("file\u2029name", "filename"),  # 段分隔符
@@ -35,9 +37,9 @@ class TestSecureFilenameSanitizer:
             result = self.sanitizer.sanitize(malicious_input)
             assert result == expected_safe, f"Failed for: {repr(malicious_input)}"
             # 确保不包含危险字符
-            assert '\u0000' not in result
-            assert '\u202E' not in result
-            assert '\u200B' not in result
+            assert "\u0000" not in result
+            assert "\u202e" not in result
+            assert "\u200b" not in result
 
     def test_windows_reserved_names_handling(self):
         """测试Windows保留名称处理"""
@@ -51,7 +53,7 @@ class TestSecureFilenameSanitizer:
 
     def test_platform_specific_characters(self):
         """测试平台特定字符处理"""
-        dangerous_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
+        dangerous_chars = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"]
 
         for char in dangerous_chars:
             test_name = f"file{char}name"
@@ -121,7 +123,7 @@ class TestSecureFilenameSanitizer:
         """测试混合攻击防护"""
         mixed_attacks = [
             "CON\u0000.txt",  # Windows保留名 + NULL字节
-            "../\u202Econ.txt",  # 路径遍历 + Unicode控制字符
+            "../\u202econ.txt",  # 路径遍历 + Unicode控制字符
             "a" * 180 + "/../passwd",  # 长度 + 路径遍历
         ]
 
@@ -132,7 +134,7 @@ class TestSecureFilenameSanitizer:
             assert len(result) > 0
             # 不应包含危险内容
             assert "\u0000" not in result
-            assert "\u202E" not in result
+            assert "\u202e" not in result
             assert "../" not in result
 
     @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
@@ -158,7 +160,7 @@ class TestSecureFilenameSanitizer:
         for hidden_name in hidden_names:
             result = self.sanitizer.sanitize(hidden_name)
             # 应该移除开头的点号
-            assert not result.startswith('.')
+            assert not result.startswith(".")
 
 
 class TestFilenameSanitizerFactory:
@@ -176,7 +178,9 @@ class TestFilenameSanitizerFactory:
 
     def test_platform_specific_creation(self):
         """测试平台特定创建"""
-        windows_sanitizer = create_filename_sanitizer(secure=True, platform_name="Windows")
+        windows_sanitizer = create_filename_sanitizer(
+            secure=True, platform_name="Windows"
+        )
         unix_sanitizer = create_filename_sanitizer(secure=True, platform_name="Linux")
 
         assert windows_sanitizer.platform == "Windows"

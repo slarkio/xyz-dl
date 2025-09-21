@@ -4,10 +4,11 @@
 """
 
 import os
-import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from xyz_dl.downloader import XiaoYuZhouDL
 from xyz_dl.exceptions import PathSecurityError
@@ -25,6 +26,7 @@ class TestPathTraversalSecurity:
     def teardown_method(self):
         """清理测试环境"""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @pytest.mark.asyncio
@@ -34,12 +36,12 @@ class TestPathTraversalSecurity:
 
         with pytest.raises(PathSecurityError) as exc_info:
             await self.downloader._download_audio(
-                "http://example.com/audio.mp3",
-                "test_file",
-                malicious_path
+                "http://example.com/audio.mp3", "test_file", malicious_path
             )
 
-        assert "Path traversal" in str(exc_info.value) or "attack detected" in str(exc_info.value)
+        assert "Path traversal" in str(exc_info.value) or "attack detected" in str(
+            exc_info.value
+        )
 
     def test_path_traversal_absolute_system_path_attack(self):
         """测试绝对系统路径攻击 - 应该被阻止"""
@@ -53,9 +55,16 @@ class TestPathTraversalSecurity:
                 self.downloader._validate_download_path(malicious_path)
 
             error_msg = str(exc_info.value).lower()
-            assert any(keyword in error_msg for keyword in [
-                "path traversal", "system directories", "unsafe area", "attack detected", "unsafe_area_access"
-            ])
+            assert any(
+                keyword in error_msg
+                for keyword in [
+                    "path traversal",
+                    "system directories",
+                    "unsafe area",
+                    "attack detected",
+                    "unsafe_area_access",
+                ]
+            )
 
     @pytest.mark.asyncio
     async def test_path_traversal_show_notes_attack(self):
@@ -65,23 +74,22 @@ class TestPathTraversalSecurity:
         with pytest.raises(PathSecurityError):
             # 创建一个模拟的EpisodeInfo
             from xyz_dl.models import EpisodeInfo, PodcastInfo
+
             mock_episode = EpisodeInfo(
                 title="Test Episode",
                 podcast=PodcastInfo(title="Test Podcast", author="Test Author"),
                 shownotes="Test Notes",
-                audio_url="http://example.com/audio.mp3"
+                audio_url="http://example.com/audio.mp3",
             )
             await self.downloader._generate_markdown(
-                mock_episode,
-                "test_file",
-                malicious_path
+                mock_episode, "test_file", malicious_path
             )
 
     def test_symlink_attack_prevention(self):
         """测试符号链接攻击防护"""
         # 创建指向系统目录的符号链接
         symlink_path = Path(self.temp_dir) / "malicious_symlink"
-        if os.name != 'nt':  # Unix系统支持符号链接
+        if os.name != "nt":  # Unix系统支持符号链接
             try:
                 symlink_path.symlink_to("/etc")
 
@@ -89,9 +97,16 @@ class TestPathTraversalSecurity:
                     self.downloader._validate_download_path(str(symlink_path))
 
                 error_msg = str(exc_info.value).lower()
-                assert any(keyword in error_msg for keyword in [
-                    "symlink", "system directories", "unsafe area", "attack detected", "unsafe_area_access"
-                ])
+                assert any(
+                    keyword in error_msg
+                    for keyword in [
+                        "symlink",
+                        "system directories",
+                        "unsafe area",
+                        "attack detected",
+                        "unsafe_area_access",
+                    ]
+                )
             except OSError:
                 pytest.skip("Cannot create symlink in test environment")
 
@@ -135,16 +150,20 @@ class TestPathTraversalSecurity:
     def test_validate_download_path_function_exists(self):
         """测试_validate_download_path函数是否存在"""
         # 这个测试会失败，直到我们实现该函数
-        assert hasattr(self.downloader, '_validate_download_path'), \
-            "_validate_download_path method must be implemented"
+        assert hasattr(
+            self.downloader, "_validate_download_path"
+        ), "_validate_download_path method must be implemented"
 
-    @pytest.mark.parametrize("attack_path", [
-        "../etc/passwd",
-        "../../windows/system32",
-        "/etc/shadow",
-        "..\\..\\..\\sensitive_file",
-        "~/../../etc/passwd",
-    ])
+    @pytest.mark.parametrize(
+        "attack_path",
+        [
+            "../etc/passwd",
+            "../../windows/system32",
+            "/etc/shadow",
+            "..\\..\\..\\sensitive_file",
+            "~/../../etc/passwd",
+        ],
+    )
     def test_various_path_traversal_attacks(self, attack_path):
         """参数化测试各种路径遍历攻击向量"""
         # 直接测试验证函数（一旦实现）
@@ -155,9 +174,10 @@ class TestPathTraversalSecurity:
     def test_windows_absolute_path_attack(self):
         """测试Windows绝对路径攻击 - 仅在Windows上或在Unix上作为相对路径"""
         import os
+
         windows_path = "C:\\Windows\\System32"
 
-        if os.name == 'nt':
+        if os.name == "nt":
             # 在Windows上应该被检测为系统目录攻击
             with pytest.raises(PathSecurityError):
                 self.downloader._validate_download_path(windows_path)
@@ -167,7 +187,7 @@ class TestPathTraversalSecurity:
             try:
                 result = self.downloader._validate_download_path(windows_path)
                 # 如果允许通过，至少确保它不是指向系统目录
-                assert not str(result).lower().startswith('/c/windows')
+                assert not str(result).lower().startswith("/c/windows")
             except PathSecurityError:
                 # 如果被阻止也是可以接受的
                 pass

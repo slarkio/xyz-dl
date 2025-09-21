@@ -20,17 +20,24 @@ from src.xyz_dl.models import DownloadRequest
 class TestEventLoopNesting:
     """测试事件循环嵌套问题"""
 
-    def test_cli_main_in_existing_event_loop_should_fail(self):
-        """测试：在已有事件循环中调用 main() 应该失败
+    def test_cli_main_in_existing_event_loop_should_work(self):
+        """测试：在已有事件循环中调用 main() 应该正常工作
 
-        这是当前的BUG - 在已有事件循环中调用 asyncio.run() 会抛出 RuntimeError
+        修复后：使用智能适配器，在事件循环中自动切换到线程池执行
         """
-        async def run_in_existing_loop():
-            # 模拟在已有事件循环中调用main
-            with pytest.raises(RuntimeError, match="cannot be called from a running event loop"):
-                main(["https://www.xiaoyuzhoufm.com/episode/test123"])
+        from src.xyz_dl.models import Config
 
-        # 在新的事件循环中运行测试，模拟实际问题场景
+        async def run_in_existing_loop():
+            # 模拟在已有事件循环中调用main，现在应该正常工作
+            result = main([
+                "https://www.xiaoyuzhoufm.com/episode/test123",
+                "--mode", "md"  # 只下载md避免实际网络请求
+            ])
+
+            # 验证函数执行完成（返回状态码）
+            assert isinstance(result, int)
+
+        # 在新的事件循环中运行测试，验证修复效果
         asyncio.run(run_in_existing_loop())
 
     def test_sync_wrapper_in_existing_event_loop_should_work(self):

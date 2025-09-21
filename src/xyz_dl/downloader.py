@@ -10,7 +10,7 @@ import sys
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Union, List
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import aiofiles
 import aiohttp
@@ -54,6 +54,14 @@ from .models import (
     EpisodeInfo,
 )
 from .parsers import CompositeParser, UrlValidator, parse_episode_from_url
+from .retry import (
+    DownloadProgressManager,
+    RetryConfig,
+    RetryStats,
+    calculate_resume_position,
+    create_range_headers,
+    create_retry_decorator,
+)
 
 
 class XiaoYuZhouDL:
@@ -94,6 +102,10 @@ class XiaoYuZhouDL:
 
         # 文件名清理器
         self._filename_sanitizer = create_filename_sanitizer(secure=secure_filename)
+
+        # 重试机制配置
+        self.retry_config = RetryConfig.from_config(self.config)
+        self.retry_stats = RetryStats()
 
     async def __aenter__(self) -> "XiaoYuZhouDL":
         """异步上下文管理器入口"""
@@ -240,9 +252,15 @@ class XiaoYuZhouDL:
             )
 
     async def _parse_episode(self, url: str) -> tuple[EpisodeInfo, Optional[str]]:
-        """解析节目信息"""
-        try:
+        """解析节目信息，支持重试机制"""
+        retry_decorator = create_retry_decorator(self.retry_config, self.retry_stats)
+
+        @retry_decorator
+        async def _parse_with_retry():
             return await parse_episode_from_url(url, self.parser)
+
+        try:
+            return await _parse_with_retry()
         except Exception as e:
             raise ParseError(f"Failed to parse episode: {e}", url=url)
 
@@ -649,7 +667,7 @@ class XiaoYuZhouDL:
     async def _download_audio(
         self, audio_url: str, filename: str, download_dir: str
     ) -> str:
-        """下载音频文件"""
+        """下载音频文件，支持重试和断点续传"""
         # 验证下载路径安全性
         download_path = self._validate_download_path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
@@ -666,63 +684,91 @@ class XiaoYuZhouDL:
         # 确定正确的文件扩展名
         extension = self._get_audio_extension(audio_url, content_type)
         file_path = download_path / f"{filename}{extension}"
+        progress_path = download_path / f"{filename}{extension}.progress"
 
         # 检查文件是否已存在 - 使用统一的检查逻辑
         if not self._check_file_exists_and_handle(file_path, "音频文件"):
             return str(file_path)
 
+        # 尝试断点续传
+        if progress_path.exists():
+            if await self._resume_download(audio_url, file_path, progress_path):
+                print(f"✅ 音频文件续传完成: {file_path.name}")
+                return str(file_path)
+
+        # 创建重试装饰器
+        retry_decorator = create_retry_decorator(self.retry_config, self.retry_stats)
+
+        @retry_decorator
+        async def _download_with_retry():
+            return await self._perform_download(audio_url, file_path, progress_path)
+
         async with self._semaphore:  # 限制并发下载数
             try:
-                if self._session is not None:
-                    async with self._session.get(audio_url) as response:
-                        if response.status != 200:
-                            raise NetworkError(
-                                f"HTTP {response.status}: {response.reason}",
-                                url=audio_url,
-                                status_code=response.status,
-                            )
+                result = await _download_with_retry()
+                print(f"✅ 音频文件已保存: {file_path.name}")
+                return result
+            except Exception as e:
+                # 清理失败的进度文件
+                DownloadProgressManager.cleanup_progress(progress_path)
+                raise e
 
-                        total_size = int(response.headers.get("content-length", 0))
-                        downloaded = 0
+    async def _perform_download(
+        self, audio_url: str, file_path: Path, progress_path: Path
+    ) -> str:
+        """执行实际的下载操作"""
+        if self._session is None:
+            raise NetworkError("Session not initialized", url=audio_url)
 
-                        # 使用rich进度条
-                        with self._create_progress_bar() as progress:
-                            task = progress.add_task(
-                                f"🎵 下载音频: {file_path.name}", total=total_size
-                            )
-
-                            async with aiofiles.open(file_path, "wb") as f:
-                                async for chunk in response.content.iter_chunked(
-                                    self.config.chunk_size
-                                ):
-                                    await f.write(chunk)
-                                    downloaded += len(chunk)
-                                    progress.update(task, completed=downloaded)
-
-                                    # 保持原有的进度回调兼容性
-                                    if self.progress_callback:
-                                        progress_info = DownloadProgress(
-                                            filename=file_path.name,
-                                            downloaded=downloaded,
-                                            total=total_size,
-                                        )
-                                        self.progress_callback(progress_info)
-
-                        print(f"✅ 音频文件已保存: {file_path.name}")
-                        return str(file_path)
-                else:
-                    raise NetworkError("Session not initialized", url=audio_url)
-
-            except aiohttp.ClientError as e:
-                raise DownloadError(
-                    f"Download failed: {e}", url=audio_url, file_path=str(file_path)
+        async with self._session.get(audio_url) as response:
+            if response.status != 200:
+                raise NetworkError(
+                    f"HTTP {response.status}: {response.reason}",
+                    url=audio_url,
+                    status_code=response.status,
                 )
-            except IOError as e:
-                raise FileOperationError(
-                    f"File write failed: {e}",
-                    file_path=str(file_path),
-                    operation="write",
+
+            total_size = int(response.headers.get("content-length", 0))
+            downloaded = 0
+
+            # 创建进度数据
+            progress_data = {
+                "downloaded": downloaded,
+                "total": total_size,
+                "url": audio_url,
+            }
+
+            # 使用rich进度条
+            with self._create_progress_bar() as progress:
+                task = progress.add_task(
+                    f"🎵 下载音频: {file_path.name}", total=total_size
                 )
+
+                async with aiofiles.open(file_path, "wb") as f:
+                    async for chunk in response.content.iter_chunked(
+                        self.config.chunk_size
+                    ):
+                        await f.write(chunk)
+                        downloaded += len(chunk)
+                        progress.update(task, completed=downloaded)
+
+                        # 定期保存进度
+                        if downloaded % (self.config.chunk_size * 10) == 0:
+                            progress_data["downloaded"] = downloaded
+                            self._save_download_progress(progress_path, progress_data)
+
+                        # 保持原有的进度回调兼容性
+                        if self.progress_callback:
+                            progress_info = DownloadProgress(
+                                filename=file_path.name,
+                                downloaded=downloaded,
+                                total=total_size,
+                            )
+                            self.progress_callback(progress_info)
+
+            # 下载完成，清理进度文件
+            DownloadProgressManager.cleanup_progress(progress_path)
+            return str(file_path)
 
     @wrap_exception
     async def _generate_markdown(
@@ -766,6 +812,7 @@ class XiaoYuZhouDL:
         # 安全HTML清理并转换为Markdown
         if show_notes != DEFAULT_SHOW_NOTES:
             from .security import sanitize_show_notes
+
             show_notes = sanitize_show_notes(show_notes)
 
         # 构建YAML元数据
@@ -818,6 +865,79 @@ audio_url: "{episode_info.audio_url}"
 downloaded_by: "xyz-dl"
 downloaded_at: "{datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')}"
 ---"""
+
+    def _save_download_progress(
+        self, progress_path: Path, progress_data: Dict[str, Any]
+    ) -> None:
+        """保存下载进度"""
+        DownloadProgressManager.save_progress(progress_path, progress_data)
+
+    def _load_download_progress(self, progress_path: Path) -> Optional[Dict[str, Any]]:
+        """加载下载进度"""
+        return DownloadProgressManager.load_progress(progress_path)
+
+    async def _resume_download(
+        self, audio_url: str, file_path: Path, progress_path: Path
+    ) -> bool:
+        """恢复下载"""
+        progress_data = self._load_download_progress(progress_path)
+        if not progress_data:
+            return False
+
+        resume_pos = calculate_resume_position(file_path, progress_data)
+        if resume_pos == 0:
+            return False
+
+        try:
+            headers = create_range_headers(resume_pos)
+            if self._session is not None:
+                async with self._session.get(audio_url, headers=headers) as response:
+                    if response.status not in [206, 200]:  # Partial Content or OK
+                        return False
+
+                    # 如果服务器不支持Range请求，重新开始
+                    if resume_pos > 0 and response.status != 206:
+                        return False
+
+                    content_length = response.headers.get("Content-Length")
+                    if content_length:
+                        remaining_size = int(content_length)
+                        total_size = resume_pos + remaining_size
+                    else:
+                        total_size = progress_data.get("total", 0)
+
+                    downloaded = resume_pos
+
+                    # 以追加模式打开文件
+                    async with aiofiles.open(file_path, "ab") as f:
+                        async for chunk in response.content.iter_chunked(
+                            self.config.chunk_size
+                        ):
+                            await f.write(chunk)
+                            downloaded += len(chunk)
+
+                            # 更新进度
+                            progress_data["downloaded"] = downloaded
+                            self._save_download_progress(progress_path, progress_data)
+
+                            # 进度回调
+                            if self.progress_callback:
+                                progress_info = DownloadProgress(
+                                    filename=file_path.name,
+                                    downloaded=downloaded,
+                                    total=total_size,
+                                )
+                                self.progress_callback(progress_info)
+
+                    # 下载完成，清理进度文件
+                    DownloadProgressManager.cleanup_progress(progress_path)
+                    return True
+
+        except Exception:
+            # 恢复失败，返回False让调用者重新开始下载
+            return False
+
+        return False
 
     # 同步接口 - 向后兼容，使用智能适配器
     def download_sync(self, request: Union[DownloadRequest, str]) -> DownloadResult:
