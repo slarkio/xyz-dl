@@ -4,8 +4,9 @@
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, HttpUrl, Field, field_validator, ConfigDict
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
 class PodcastInfo(BaseModel):
@@ -28,16 +29,16 @@ class EpisodeInfo(BaseModel):
     pub_date: str = Field(default="", description="发布日期")
     eid: str = Field(default="", description="节目ID")
     shownotes: Optional[str] = Field(default="", description="节目介绍")
-    
+
     # 新增的元数据字段
     episode_url: str = Field(default="", description="节目完整URL")
-    audio_url: str = Field(default="", description="音频文件URL") 
+    audio_url: str = Field(default="", description="音频文件URL")
     cover_image: str = Field(default="", description="节目封面图片URL")
     published_datetime: str = Field(default="", description="精确发布时间(ISO格式)")
 
     @field_validator("duration")
     @classmethod
-    def validate_duration(cls, v):
+    def validate_duration(cls, v: int) -> int:
         """验证时长必须非负"""
         if v < 0:
             raise ValueError("Duration must be non-negative")
@@ -93,7 +94,7 @@ class DownloadRequest(BaseModel):
 
     @field_validator("mode")
     @classmethod
-    def validate_mode(cls, v):
+    def validate_mode(cls, v: str) -> str:
         """验证下载模式"""
         valid_modes = ["audio", "md", "both"]
         if v not in valid_modes:
@@ -102,10 +103,10 @@ class DownloadRequest(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def validate_xiaoyuzhou_url(cls, v):
+    def validate_xiaoyuzhou_url(cls, v: Any) -> str:
         """验证并标准化 URL（支持 episode ID 或完整 URL）"""
         from .parsers import UrlValidator
-        
+
         url_str = str(v).strip()
         try:
             # 使用 UrlValidator 标准化为完整的 URL
@@ -149,11 +150,11 @@ class DownloadProgress(BaseModel):
     def formatted_size(self) -> str:
         """格式化文件大小"""
 
-        def format_bytes(bytes_num: int) -> str:
+        def format_bytes(bytes_num: float) -> str:
             for unit in ["B", "KB", "MB", "GB"]:
                 if bytes_num < 1024.0:
                     return f"{bytes_num:.1f} {unit}"
-                bytes_num /= 1024.0
+                bytes_num = bytes_num / 1024.0
             return f"{bytes_num:.1f} TB"
 
         if self.total > 0:
@@ -192,7 +193,7 @@ class Config(BaseModel):
         "max_concurrent_downloads",
     )
     @classmethod
-    def validate_positive(cls, v):
+    def validate_positive(cls, v: int) -> int:
         """验证必须为正数"""
         if v <= 0:
             raise ValueError("Value must be positive")
