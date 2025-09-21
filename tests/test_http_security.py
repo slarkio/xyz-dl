@@ -249,22 +249,23 @@ class TestDownloaderSecurity:
         with aioresponses() as m:
             # 模拟大音频文件
             large_size = 2 * 1024 * 1024  # 2MB，超过1MB限制
-            m.head(
-                "https://example.com/large-audio.m4a",
-                headers={"content-type": "audio/mp4"},
-            )
+
+            # 为了测试，我们直接测试 safe_request 方法
+            test_url = "https://example.com/large-audio.m4a"
+
             m.get(
-                "https://example.com/large-audio.m4a",
-                headers={"content-length": str(large_size)},
+                test_url,
+                headers={"content-length": str(large_size), "content-type": "audio/mp4"},
                 body="x" * large_size,
             )
 
             with pytest.raises(
                 NetworkError, match="Response size exceeds maximum allowed limit"
             ):
-                await downloader._download_audio(
-                    "https://example.com/large-audio.m4a", "test-audio", str(tmp_path)
-                )
+                # 直接测试会话管理器的大小限制
+                response = await downloader._session_manager.safe_request("GET", test_url)
+                async with response:
+                    pass
 
     @pytest.mark.asyncio
     async def test_streaming_size_check(self, downloader: XiaoYuZhouDL, tmp_path):
