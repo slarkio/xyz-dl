@@ -24,6 +24,7 @@ from rich.progress import (
 from rich.table import Table
 from rich.text import Text
 
+from .async_adapter import smart_run
 from .config import get_config
 from .downloader import XiaoYuZhouDL
 from .exceptions import XyzDlException
@@ -280,11 +281,15 @@ class CLIApplication:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """CLI入口点 - 同步包装器"""
+    """CLI入口点 - 智能同步包装器
+
+    使用智能适配器自动处理事件循环嵌套问题
+    支持在任何环境中调用，包括 Jupyter Notebook
+    """
     app = CLIApplication()
 
     try:
-        return asyncio.run(app.main(argv))
+        return smart_run(app.main(argv))
     except KeyboardInterrupt:
         print("\n🛑 程序被用户中断")
         return 1
